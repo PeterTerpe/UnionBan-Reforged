@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -122,22 +123,34 @@ func (s *Service) ImportKeyPairJSON(ctx context.Context, raw []byte) error {
 		return errors.New("public key and private key are required")
 	}
 
-	publicKey, err := decodeBase64(exported.PublicKey)
+	publicKeyBytes, err := decodeBase64(exported.PublicKey)
 	if err != nil {
 		return fmt.Errorf("invalid public key: %w", err)
 	}
 
-	privateKey, err := decodeBase64(exported.PrivateKey)
+	privateKeyBytes, err := decodeBase64(exported.PrivateKey)
 	if err != nil {
 		return fmt.Errorf("invalid private key: %w", err)
 	}
 
-	if len(publicKey) != ed25519.PublicKeySize {
+	if len(publicKeyBytes) != ed25519.PublicKeySize {
 		return errors.New("invalid public key size")
 	}
 
-	if len(privateKey) != ed25519.PrivateKeySize {
+	if len(privateKeyBytes) != ed25519.PrivateKeySize {
 		return errors.New("invalid private key size")
+	}
+
+	publicKey := ed25519.PublicKey(publicKeyBytes)
+	privateKey := ed25519.PrivateKey(privateKeyBytes)
+
+	derivedPublicKey, ok := privateKey.Public().(ed25519.PublicKey)
+	if !ok {
+		return errors.New("failed to derive public key from private key")
+	}
+
+	if !bytes.Equal(derivedPublicKey, publicKey) {
+		return errors.New("private key does not match public key")
 	}
 
 	expectedNodeID := NodeIDFromPublicKey(publicKey)
@@ -145,23 +158,22 @@ func (s *Service) ImportKeyPairJSON(ctx context.Context, raw []byte) error {
 		return errors.New("node_id does not match public key")
 	}
 
+	now := time.Now().Unix()
+
 	identity := &Identity{
-		NodeID:      exported.NodeID,
-		PublicKey:   exported.PublicKey,
-		PrivateKey:  exported.PrivateKey,
-		Certificate: exported.Certificate,
-		CreatedAt:   time.Now().Unix(),
-		UpdatedAt:   time.Now().Unix(),
+		NodeID:     exported.NodeID,
+		PublicKey:  exported.PublicKey,
+		PrivateKey: exported.PrivateKey,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 
-	if identity.Certificate == "" {
-		certificate, err := createCertificate(identity, "Imported MeshBan Node")
-		if err != nil {
-			return err
-		}
-
-		identity.Certificate = certificate
+	certificate, err := createCertificate(identity, "Imported MeshBan Node")
+	if err != nil {
+		return err
 	}
+
+	identity.Certificate = certificate
 
 	if err := s.database.SaveIdentity(ctx, identity.toRecord()); err != nil {
 		return err
@@ -178,10 +190,16 @@ func (s *Service) SignLocalBan(playerUUID string, reason string, sourceNodeID st
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	privateKey, err := decodeBase64(s.current.PrivateKey)
+	privateKeyBytes, err := decodeBase64(s.current.PrivateKey)
 	if err != nil {
 		return "", err
 	}
+
+	if len(privateKeyBytes) != ed25519.PrivateKeySize {
+		return "", errors.New("invalid private key size")
+	}
+
+	privateKey := ed25519.PrivateKey(privateKeyBytes)
 
 	message := buildBanSignaturePayload(playerUUID, reason, sourceNodeID, updatedAt)
 	signature := ed25519.Sign(privateKey, []byte(message))
@@ -216,10 +234,16 @@ func generateIdentity(displayName string) (*Identity, error) {
 }
 
 func createCertificate(identity *Identity, displayName string) (string, error) {
-	privateKey, err := decodeBase64(identity.PrivateKey)
+	privateKeyBytes, err := decodeBase64(identity.PrivateKey)
 	if err != nil {
 		return "", err
 	}
+
+	if len(privateKeyBytes) != ed25519.PrivateKeySize {
+		return "", errors.New("invalid private key size")
+	}
+
+	privateKey := ed25519.PrivateKey(privateKeyBytes)
 
 	cert := Certificate{
 		Type:        certificateType,

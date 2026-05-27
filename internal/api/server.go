@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/PeterTerpe/MeshBan/internal/database"
@@ -50,7 +52,7 @@ func NewServer(options Options) *Server {
 
 	s.server = &http.Server{
 		Addr:              options.ListenAddr,
-		Handler:           mux,
+		Handler:           localOnlyAdminMiddleware(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -121,4 +123,37 @@ func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 	encoder.SetIndent("", "  ")
 
 	_ = encoder.Encode(value)
+}
+
+func localOnlyAdminMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Keep the status endpoint available for basic health checks.
+		if r.URL.Path == "/api/v1/status" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if !isLoopbackRequest(r) {
+			http.Error(w, "admin interface is only available from localhost", http.StatusForbidden)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isLoopbackRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+
+	host = strings.TrimSpace(host)
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	return ip.IsLoopback()
 }

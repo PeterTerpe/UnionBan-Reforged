@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +32,6 @@ type Handler struct {
 	database        *database.Database
 	identityService *identity.Service
 	logger          *slog.Logger
-	templates       *template.Template
 }
 
 type PageData struct {
@@ -242,7 +242,7 @@ func (h *Handler) handleCreateBanEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/ui/database?message=ban entry created", http.StatusSeeOther)
+	redirectWithMessage(w, r, "/ui/database", "ban entry created")
 }
 
 func (h *Handler) handleUpdateBanEntry(w http.ResponseWriter, r *http.Request) {
@@ -347,16 +347,18 @@ func parseBanEntryForm(r *http.Request) (database.BanEntry, error) {
 	}
 
 	return database.BanEntry{
-		ID:           id,
-		PlayerUUID:   r.FormValue("player_uuid"),
-		Reason:       r.FormValue("reason"),
-		SourceNodeID: r.FormValue("source_node_id"),
-		Signature:    r.FormValue("signature"),
+		ID:         id,
+		PlayerUUID: r.FormValue("player_uuid"),
+		Reason:     r.FormValue("reason"),
 	}, nil
 }
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, path string, message string) {
-	http.Redirect(w, r, path+"?error="+message, http.StatusSeeOther)
+	http.Redirect(w, r, path+"?error="+url.QueryEscape(message), http.StatusSeeOther)
+}
+
+func redirectWithMessage(w http.ResponseWriter, r *http.Request, path string, message string) {
+	http.Redirect(w, r, path+"?message="+url.QueryEscape(message), http.StatusSeeOther)
 }
 
 func (h *Handler) handleIdentityPage(w http.ResponseWriter, r *http.Request) {
@@ -389,7 +391,8 @@ func (h *Handler) handleExportIdentity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", `attachment; filename="meshban-keypair.json"`)
+	filename := "meshban-keypair-" + time.Now().Format("20060102-150405") + ".json"
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.WriteHeader(http.StatusOK)
 
 	_, _ = w.Write(raw)

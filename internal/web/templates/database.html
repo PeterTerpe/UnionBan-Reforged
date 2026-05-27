@@ -1,7 +1,7 @@
 {{define "content"}}
 <div class="card">
     <h2>Database Management</h2>
-    <p>This page allows manual debugging of local database records.</p>
+    <p>This page allows manual debugging of local banlist records.</p>
     <p><a href="/ui">Back to dashboard</a></p>
 
     {{if .Message}}
@@ -23,15 +23,9 @@
         <label>Reason</label>
         <input class="input" name="reason" placeholder="cheating">
 
-        <td>
-            <code>{{.SourceNodeID}}</code>
-        </td>
-        <td>
-            <code>{{.Signature}}</code>
-        </td>
-        <td>
-            <code>{{formatUnix .UpdatedAt}}</code>
-        </td>
+        <p>
+            Source node ID and signature will be generated automatically by the local identity.
+        </p>
 
         <button class="button" type="submit">Add Ban Entry</button>
     </form>
@@ -49,6 +43,7 @@
                     <th>Reason</th>
                     <th>Source Node ID</th>
                     <th>Signature</th>
+                    <th>Created At</th>
                     <th>Updated At</th>
                     <th>Actions</th>
                 </tr>
@@ -57,34 +52,42 @@
             <tbody>
                 {{range .BanEntries}}
                     <tr>
+                        <td>{{.ID}}</td>
+
                         <form method="post" action="/ui/database/banlist/update">
                             <td>
-                                {{.ID}}
                                 <input type="hidden" name="id" value="{{.ID}}">
-                            </td>
-                            <td>
                                 <input class="table-input" name="player_uuid" value="{{.PlayerUUID}}">
                             </td>
+
                             <td>
                                 <input class="table-input" name="reason" value="{{.Reason}}">
                             </td>
+
                             <td>
-                                <input class="table-input" name="source_node_id" value="{{.SourceNodeID}}">
+                                <code>{{.SourceNodeID}}</code>
                             </td>
+
                             <td>
-                                <input class="table-input" name="signature" value="{{.Signature}}">
+                                <code>{{.Signature}}</code>
                             </td>
+
+                            <td>
+                                <code>{{formatUnix .CreatedAt}}</code>
+                            </td>
+
                             <td>
                                 <code>{{formatUnix .UpdatedAt}}</code>
                             </td>
+
                             <td>
                                 <button class="button small-button" type="submit">Update</button>
                         </form>
 
-                        <form method="post" action="/ui/database/banlist/delete" class="inline-form">
-                            <input type="hidden" name="id" value="{{.ID}}">
-                            <button class="danger-button small-button" type="submit">Delete</button>
-                        </form>
+                                <form method="post" action="/ui/database/banlist/delete" class="inline-form">
+                                    <input type="hidden" name="id" value="{{.ID}}">
+                                    <button class="danger-button small-button" type="submit">Delete</button>
+                                </form>
                             </td>
                     </tr>
                 {{end}}

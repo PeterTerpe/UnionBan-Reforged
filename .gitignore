@@ -2,3 +2,5 @@ data/
 *.log
 .env
 config.yaml
+*keypair*.json
+*.key
