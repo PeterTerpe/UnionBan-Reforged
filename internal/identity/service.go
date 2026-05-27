@@ -378,3 +378,20 @@ func (s *Service) upgradePrivateKeyStorage(ctx context.Context) error {
 
 	return s.database.SaveIdentity(ctx, s.current.toRecord())
 }
+
+func (s *Service) CreateNewIdentity(ctx context.Context, displayName string) error {
+	newIdentity, err := generateIdentity(displayName, s.keyOptions)
+	if err != nil {
+		return err
+	}
+
+	if err := s.database.SaveIdentity(ctx, newIdentity.toRecord()); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.current = newIdentity
+	s.mu.Unlock()
+
+	return nil
+}

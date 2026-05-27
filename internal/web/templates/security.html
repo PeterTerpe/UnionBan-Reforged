@@ -39,8 +39,8 @@
     <p>Current token preview: <code>{{.WebTokenPreview}}</code></p>
 
     <form method="post"
-        action="/ui/settings/security/token/regenerate"
-        onsubmit="return confirm('Regenerate the WebUI token? Existing remote access links using the old token will stop working.')">
+          action="/ui/settings/security/token/regenerate"
+          onsubmit="return confirm('Regenerate the WebUI token? Existing remote access links using the old token will stop working.')">
         <button class="danger-button" type="submit">Regenerate WebUI Token</button>
     </form>
 </div>
@@ -52,25 +52,28 @@
     <p>Passphrase configured: <strong>{{.HasKeyPassphrase}}</strong></p>
 
     <form method="post"
-      action="/ui/settings/security/passphrase"
-      onsubmit="return confirm('Change the private key passphrase? Make sure you remember or back up the new passphrase.')">
+          action="/ui/settings/security/passphrase"
+          onsubmit="return confirm('Change the private key passphrase? It will be stored in .env')">
         <label>New Passphrase</label>
         <input class="input" name="new_passphrase" type="password" placeholder="New private key passphrase">
 
         <button class="button" type="submit">Enable or Change Passphrase</button>
     </form>
 
-    <hr>
-    <div class="danger-zone" style="padding: 16px; border-radius: 12px; margin-top: 18px;">
-        <h2>Danger Zone</h2>
-        <form method="post"
-            action="/ui/settings/security/disable-encryption"
-            onsubmit="return confirm('Disable private key encryption? The private key will be stored in plaintext inside the SQLite database.')">
-            <p class="warning-text">
-                Disabling encryption stores the local private key in plaintext inside the SQLite database.
-            </p>
-            <button class="danger-button" type="submit">Disable Private Key Encryption</button>
-        </form>
-    </div>
+    {{if .HasKeyPassphrase}}
+        <div class="danger-zone">
+            <h2>Danger Zone</h2>
+
+            <form method="post"
+                  action="/ui/settings/security/disable-encryption"
+                  onsubmit="return confirm('Disable private key encryption? The private key will be stored in plaintext inside the SQLite database and the passphrase will be removed.')">
+                <p class="warning-text">
+                    Disabling encryption stores the local private key in plaintext inside the SQLite database and removes the current key passphrase.
+                </p>
+
+                <button class="danger-button" type="submit">Disable Private Key Encryption</button>
+            </form>
+        </div>
+    {{end}}
 </div>
 {{end}}

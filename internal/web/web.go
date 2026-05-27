@@ -93,6 +93,7 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 	mux.HandleFunc("/ui/identity", handler.handleIdentityPage)
 	mux.HandleFunc("/ui/identity/export", handler.handleExportIdentity)
 	mux.HandleFunc("/ui/identity/import", handler.handleImportIdentity)
+	mux.HandleFunc("/ui/identity/new-keypair", handler.handleCreateNewKeyPair)
 
 	mux.HandleFunc("/ui/settings/security", handler.handleSecuritySettingsPage)
 	mux.HandleFunc("/ui/settings/security/webui", handler.handleUpdateWebUISettings)
@@ -609,4 +610,26 @@ func previewSecret(value string) string {
 	}
 
 	return value[:6] + "..." + value[len(value)-4:]
+}
+
+func (h *Handler) handleCreateNewKeyPair(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	displayName := "MeshBan Node"
+	if h.config != nil && strings.TrimSpace(h.config.Node.DisplayName) != "" {
+		displayName = strings.TrimSpace(h.config.Node.DisplayName)
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.identityService.CreateNewIdentity(ctx, displayName); err != nil {
+		redirectWithError(w, r, "/ui/identity", err.Error())
+		return
+	}
+
+	redirectWithMessage(w, r, "/ui/identity", "new key pair created")
 }

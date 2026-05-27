@@ -35,20 +35,37 @@
         </p>
 
         <div class="danger-zone">
+            <h2>Create New Key Pair</h2>
+
+            <p class="warning-text">
+                Creating a new key pair replaces the current local identity and changes this node's Node ID.
+                Existing local ban records signed by the old identity will not be automatically re-signed.
+            </p>
+
+            <form method="post"
+                  action="/ui/identity/new-keypair"
+                  onsubmit="return confirm('Create a new key pair? This will replace the current local identity and change this node\'s Node ID.')">
+                <button class="danger-button" type="submit">Create New Key Pair</button>
+            </form>
+        </div>
+
+        <div class="danger-zone">
             <h2>Export Key Pair</h2>
+
             <p class="warning-text">
                 The exported key pair contains sensitive identity material. Keep the downloaded file secret and never commit it to Git.
             </p>
 
             <a class="button link-button"
                href="/ui/identity/export"
-               onclick="return confirm('Export the key pair? You are putting all other trusting nodes at risk!')">
+               onclick="return confirm('Export the key pair? Keep the downloaded file secret and never commit it to Git.')">
                 Download Key Pair JSON
             </a>
         </div>
 
         <div class="danger-zone">
             <h2>Import Key Pair</h2>
+
             <p class="warning-text">
                 Importing a key pair replaces the current local identity. Use this only for migration or backup recovery.
             </p>
