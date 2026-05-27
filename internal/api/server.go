@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/PeterTerpe/MeshBan/internal/database"
+	"github.com/PeterTerpe/MeshBan/internal/web"
 )
 
 type Server struct {
@@ -48,6 +49,12 @@ func NewServer(options Options) *Server {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+
+	web.RegisterRoutes(mux, web.Options{
+		Version:  options.Version,
+		Database: options.Database,
+		Logger:   options.Logger,
+	})
 
 	return s
 }

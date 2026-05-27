@@ -44,7 +44,7 @@ func main() {
 	logger.Info("starting MeshBan", "version", Version)
 
 	// Load configuration.
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.LoadOrCreate(*configPath, "example_config.yaml")
 	if err != nil {
 		logger.Error("failed to load configuration", "error", err)
 		os.Exit(1)

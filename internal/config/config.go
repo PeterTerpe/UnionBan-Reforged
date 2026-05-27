@@ -1,7 +1,10 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -10,6 +13,7 @@ type Config struct {
 	Node     NodeConfig     `yaml:"node"`
 	Database DatabaseConfig `yaml:"database"`
 	API      APIConfig      `yaml:"api"`
+	Policy   PolicyConfig   `yaml:"policy"`
 	P2P      P2PConfig      `yaml:"p2p"`
 }
 
@@ -37,6 +41,21 @@ type P2PConfig struct {
 	BootstrapPeers []string `yaml:"bootstrap_peers"`
 }
 
+func LoadOrCreate(path string, examplePath string) (*Config, error) {
+	// Create the config file from the example file if it does not exist.
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if err := createConfigFromExample(path, examplePath); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+
+	return Load(path)
+}
+
 func Load(path string) (*Config, error) {
 	// Read the configuration file from disk.
 	data, err := os.ReadFile(path)
@@ -57,6 +76,35 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+func createConfigFromExample(path string, examplePath string) error {
+	// Read the example configuration file.
+	data, err := os.ReadFile(examplePath)
+	if err != nil {
+		return fmt.Errorf("failed to read example config %q: %w", examplePath, err)
+	}
+
+	// Create the parent directory for the target config file if needed.
+	dir := filepath.Dir(path)
+	if dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create config directory %q: %w", dir, err)
+		}
+	}
+
+	// Write the new config file without overwriting an existing file.
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create config file %q: %w", path, err)
+	}
+	defer file.Close()
+
+	if _, err := file.Write(data); err != nil {
+		return fmt.Errorf("failed to write config file %q: %w", path, err)
+	}
+
+	return nil
+}
+
 func applyDefaults(cfg *Config) {
 	if cfg.Node.DisplayName == "" {
 		cfg.Node.DisplayName = "New MeshBan Node"
@@ -68,5 +116,17 @@ func applyDefaults(cfg *Config) {
 
 	if cfg.API.Listen == "" {
 		cfg.API.Listen = "127.0.0.1:30000"
+	}
+
+	if cfg.Policy.AlertScore == 0 {
+		cfg.Policy.AlertScore = 30
+	}
+
+	if cfg.Policy.ReviewScore == 0 {
+		cfg.Policy.ReviewScore = 60
+	}
+
+	if cfg.Policy.DenyScore == 0 {
+		cfg.Policy.DenyScore = 90
 	}
 }

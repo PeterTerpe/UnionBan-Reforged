@@ -82,3 +82,40 @@ func (d *Database) Ping(ctx context.Context) error {
 func (d *Database) Close() error {
 	return d.db.Close()
 }
+
+type DebugInfo struct {
+	OK            bool
+	SchemaVersion string
+	Message       string
+}
+
+func (d *Database) DebugInfo(ctx context.Context) DebugInfo {
+	// Check whether the database is reachable.
+	if err := d.db.PingContext(ctx); err != nil {
+		return DebugInfo{
+			OK:      false,
+			Message: err.Error(),
+		}
+	}
+
+	var schemaVersion string
+
+	// Read the current schema version from the metadata table.
+	err := d.db.QueryRowContext(
+		ctx,
+		"SELECT value FROM metadata WHERE key = 'schema_version'",
+	).Scan(&schemaVersion)
+
+	if err != nil {
+		return DebugInfo{
+			OK:      false,
+			Message: err.Error(),
+		}
+	}
+
+	return DebugInfo{
+		OK:            true,
+		SchemaVersion: schemaVersion,
+		Message:       "database is reachable",
+	}
+}
