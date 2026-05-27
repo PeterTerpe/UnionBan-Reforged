@@ -1,0 +1,51 @@
+{{define "content"}}
+<div class="card">
+    <h2>Local Identity</h2>
+    <p><a href="/ui">Back to dashboard</a></p>
+
+    {{if .Message}}
+        <p class="result-ok">{{.Message}}</p>
+    {{end}}
+
+    {{if .ErrorMessage}}
+        <p class="result-error">{{.ErrorMessage}}</p>
+    {{end}}
+
+    {{if .LocalIdentity}}
+        <p><strong>Node ID:</strong></p>
+        <p><code>{{.LocalIdentity.NodeID}}</code></p>
+
+        <p><strong>Public Key:</strong></p>
+        <textarea readonly class="large-textarea">{{.LocalIdentity.PublicKey}}</textarea>
+
+        <p><strong>Certificate:</strong></p>
+        <textarea readonly class="large-textarea">{{.LocalIdentity.Certificate}}</textarea>
+
+        <p><strong>Created At:</strong> {{formatUnix .LocalIdentity.CreatedAt}}</p>
+        <p><strong>Updated At:</strong> {{formatUnix .LocalIdentity.UpdatedAt}}</p>
+    {{end}}
+</div>
+
+<div class="card">
+    <h2>Export Key Pair</h2>
+    <p class="warning-text">
+        The exported key pair contains the private key. Keep it secret.
+    </p>
+
+    <a class="button link-button" href="/ui/identity/export">Download Key Pair JSON</a>
+</div>
+
+<div class="card">
+    <h2>Import Key Pair</h2>
+    <p class="warning-text">
+        Importing a key pair replaces the current local identity. Use this only for migration or backup recovery.
+    </p>
+
+    <form method="post" action="/ui/identity/import">
+        <label>Key Pair JSON</label>
+        <textarea class="large-textarea" name="keypair_json" placeholder="Paste exported key pair JSON here"></textarea>
+
+        <button class="danger-button" type="submit">Import and Replace Identity</button>
+    </form>
+</div>
+{{end}}

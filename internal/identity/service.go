@@ -1,0 +1,302 @@
+package identity
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/PeterTerpe/MeshBan/internal/database"
+)
+
+const (
+	certificateType   = "meshban.node_certificate.v1"
+	keyPairExportType = "meshban.key_pair_export.v1"
+)
+
+type Service struct {
+	mu       sync.RWMutex
+	database *database.Database
+	current  *Identity
+}
+
+type Identity struct {
+	NodeID      string
+	PublicKey   string
+	PrivateKey  string
+	Certificate string
+	CreatedAt   int64
+	UpdatedAt   int64
+}
+
+type Certificate struct {
+	Type        string `json:"type"`
+	NodeID      string `json:"node_id"`
+	PublicKey   string `json:"public_key"`
+	DisplayName string `json:"display_name"`
+	CreatedAt   int64  `json:"created_at"`
+	Signature   string `json:"signature"`
+}
+
+type KeyPairExport struct {
+	Type        string `json:"type"`
+	NodeID      string `json:"node_id"`
+	PublicKey   string `json:"public_key"`
+	PrivateKey  string `json:"private_key"`
+	Certificate string `json:"certificate"`
+	ExportedAt  int64  `json:"exported_at"`
+}
+
+func LoadOrCreate(ctx context.Context, db *database.Database, displayName string) (*Service, error) {
+	service := &Service{
+		database: db,
+	}
+
+	record, err := db.GetIdentity(ctx)
+	if err == nil {
+		service.current = identityFromRecord(record)
+		return service, nil
+	}
+
+	if !database.IsIdentityNotFound(err) {
+		return nil, err
+	}
+
+	identity, err := generateIdentity(displayName)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := db.SaveIdentity(ctx, identity.toRecord()); err != nil {
+		return nil, err
+	}
+
+	service.current = identity
+
+	return service, nil
+}
+
+func (s *Service) Current() Identity {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return *s.current
+}
+
+func (s *Service) ExportKeyPairJSON() ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	export := KeyPairExport{
+		Type:        keyPairExportType,
+		NodeID:      s.current.NodeID,
+		PublicKey:   s.current.PublicKey,
+		PrivateKey:  s.current.PrivateKey,
+		Certificate: s.current.Certificate,
+		ExportedAt:  time.Now().Unix(),
+	}
+
+	return json.MarshalIndent(export, "", "  ")
+}
+
+func (s *Service) ImportKeyPairJSON(ctx context.Context, raw []byte) error {
+	var exported KeyPairExport
+
+	if err := json.Unmarshal(raw, &exported); err != nil {
+		return err
+	}
+
+	if exported.Type != keyPairExportType {
+		return errors.New("invalid key pair export type")
+	}
+
+	if exported.PublicKey == "" || exported.PrivateKey == "" {
+		return errors.New("public key and private key are required")
+	}
+
+	publicKey, err := decodeBase64(exported.PublicKey)
+	if err != nil {
+		return fmt.Errorf("invalid public key: %w", err)
+	}
+
+	privateKey, err := decodeBase64(exported.PrivateKey)
+	if err != nil {
+		return fmt.Errorf("invalid private key: %w", err)
+	}
+
+	if len(publicKey) != ed25519.PublicKeySize {
+		return errors.New("invalid public key size")
+	}
+
+	if len(privateKey) != ed25519.PrivateKeySize {
+		return errors.New("invalid private key size")
+	}
+
+	expectedNodeID := NodeIDFromPublicKey(publicKey)
+	if exported.NodeID != expectedNodeID {
+		return errors.New("node_id does not match public key")
+	}
+
+	identity := &Identity{
+		NodeID:      exported.NodeID,
+		PublicKey:   exported.PublicKey,
+		PrivateKey:  exported.PrivateKey,
+		Certificate: exported.Certificate,
+		CreatedAt:   time.Now().Unix(),
+		UpdatedAt:   time.Now().Unix(),
+	}
+
+	if identity.Certificate == "" {
+		certificate, err := createCertificate(identity, "Imported MeshBan Node")
+		if err != nil {
+			return err
+		}
+
+		identity.Certificate = certificate
+	}
+
+	if err := s.database.SaveIdentity(ctx, identity.toRecord()); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.current = identity
+	s.mu.Unlock()
+
+	return nil
+}
+
+func (s *Service) SignLocalBan(playerUUID string, reason string, sourceNodeID string, updatedAt int64) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	privateKey, err := decodeBase64(s.current.PrivateKey)
+	if err != nil {
+		return "", err
+	}
+
+	message := buildBanSignaturePayload(playerUUID, reason, sourceNodeID, updatedAt)
+	signature := ed25519.Sign(privateKey, []byte(message))
+
+	return encodeBase64(signature), nil
+}
+
+func generateIdentity(displayName string) (*Identity, error) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().Unix()
+
+	identity := &Identity{
+		NodeID:     NodeIDFromPublicKey(publicKey),
+		PublicKey:  encodeBase64(publicKey),
+		PrivateKey: encodeBase64(privateKey),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+
+	certificate, err := createCertificate(identity, displayName)
+	if err != nil {
+		return nil, err
+	}
+
+	identity.Certificate = certificate
+
+	return identity, nil
+}
+
+func createCertificate(identity *Identity, displayName string) (string, error) {
+	privateKey, err := decodeBase64(identity.PrivateKey)
+	if err != nil {
+		return "", err
+	}
+
+	cert := Certificate{
+		Type:        certificateType,
+		NodeID:      identity.NodeID,
+		PublicKey:   identity.PublicKey,
+		DisplayName: displayName,
+		CreatedAt:   time.Now().Unix(),
+	}
+
+	payload := buildCertificatePayload(cert)
+	signature := ed25519.Sign(privateKey, []byte(payload))
+	cert.Signature = encodeBase64(signature)
+
+	raw, err := json.MarshalIndent(cert, "", "  ")
+	if err != nil {
+		return "", err
+	}
+
+	return string(raw), nil
+}
+
+func NodeIDFromPublicKey(publicKey []byte) string {
+	sum := sha256.Sum256(publicKey)
+	return "mb_" + hex.EncodeToString(sum[:])
+}
+
+func identityFromRecord(record *database.IdentityRecord) *Identity {
+	return &Identity{
+		NodeID:      record.NodeID,
+		PublicKey:   record.PublicKey,
+		PrivateKey:  record.PrivateKey,
+		Certificate: record.Certificate,
+		CreatedAt:   record.CreatedAt,
+		UpdatedAt:   record.UpdatedAt,
+	}
+}
+
+func (i *Identity) toRecord() database.IdentityRecord {
+	return database.IdentityRecord{
+		NodeID:      i.NodeID,
+		PublicKey:   i.PublicKey,
+		PrivateKey:  i.PrivateKey,
+		Certificate: i.Certificate,
+		CreatedAt:   i.CreatedAt,
+		UpdatedAt:   i.UpdatedAt,
+	}
+}
+
+func buildCertificatePayload(cert Certificate) string {
+	parts := []string{
+		"MeshBan certificate v1",
+		cert.Type,
+		cert.NodeID,
+		cert.PublicKey,
+		cert.DisplayName,
+		fmt.Sprintf("%d", cert.CreatedAt),
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+func buildBanSignaturePayload(playerUUID string, reason string, sourceNodeID string, updatedAt int64) string {
+	parts := []string{
+		"MeshBan local ban v1",
+		strings.TrimSpace(playerUUID),
+		strings.TrimSpace(reason),
+		strings.TrimSpace(sourceNodeID),
+		fmt.Sprintf("%d", updatedAt),
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+func encodeBase64(data []byte) string {
+	return base64.RawURLEncoding.EncodeToString(data)
+}
+
+func decodeBase64(value string) ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(strings.TrimSpace(value))
+}

@@ -8,21 +8,24 @@ import (
 	"time"
 
 	"github.com/PeterTerpe/MeshBan/internal/database"
+	"github.com/PeterTerpe/MeshBan/internal/identity"
 	"github.com/PeterTerpe/MeshBan/internal/web"
 )
 
 type Server struct {
-	server   *http.Server
-	version  string
-	database *database.Database
-	logger   *slog.Logger
+	server          *http.Server
+	version         string
+	database        *database.Database
+	identityService *identity.Service
+	logger          *slog.Logger
 }
 
 type Options struct {
-	ListenAddr string
-	Version    string
-	Database   *database.Database
-	Logger     *slog.Logger
+	ListenAddr      string
+	Version         string
+	Database        *database.Database
+	IdentityService *identity.Service
+	Logger          *slog.Logger
 }
 
 type StatusResponse struct {
@@ -37,9 +40,10 @@ func NewServer(options Options) *Server {
 	mux := http.NewServeMux()
 
 	s := &Server{
-		version:  options.Version,
-		database: options.Database,
-		logger:   options.Logger,
+		version:         options.Version,
+		database:        options.Database,
+		identityService: options.IdentityService,
+		logger:          options.Logger,
 	}
 
 	mux.HandleFunc("/api/v1/status", s.handleStatus)
@@ -51,9 +55,10 @@ func NewServer(options Options) *Server {
 	}
 
 	web.RegisterRoutes(mux, web.Options{
-		Version:  options.Version,
-		Database: options.Database,
-		Logger:   options.Logger,
+		Version:         options.Version,
+		Database:        options.Database,
+		IdentityService: options.IdentityService,
+		Logger:          options.Logger,
 	})
 
 	return s

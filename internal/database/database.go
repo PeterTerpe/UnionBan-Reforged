@@ -59,7 +59,6 @@ func (d *Database) configure() error {
 }
 
 func (d *Database) Migrate(ctx context.Context) error {
-	// Create a minimal metadata table for the first development version.
 	query := `
 CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,
@@ -68,6 +67,32 @@ CREATE TABLE IF NOT EXISTS metadata (
 
 INSERT OR IGNORE INTO metadata (key, value)
 VALUES ('schema_version', '1');
+
+CREATE TABLE IF NOT EXISTS local_identity (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    node_id TEXT NOT NULL,
+    public_key TEXT NOT NULL,
+    private_key TEXT NOT NULL,
+    certificate TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS banlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_uuid TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    source_node_id TEXT NOT NULL,
+    signature TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_banlist_player_uuid
+ON banlist(player_uuid);
+
+CREATE INDEX IF NOT EXISTS idx_banlist_source_node_id
+ON banlist(source_node_id);
 `
 
 	_, err := d.db.ExecContext(ctx, query)

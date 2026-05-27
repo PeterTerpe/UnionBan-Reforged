@@ -67,3 +67,79 @@ code {
     padding: 2px 5px;
     border-radius: 5px;
 }
+
+label {
+    display: block;
+    margin-top: 12px;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+}
+
+.data-table th,
+.data-table td {
+    border-bottom: 1px solid #e5e7eb;
+    padding: 10px;
+    text-align: left;
+    vertical-align: top;
+}
+
+.data-table th {
+    background: #f9fafb;
+}
+
+.table-input {
+    width: 100%;
+    min-width: 160px;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+}
+
+.small-button {
+    padding: 7px 10px;
+    margin-top: 4px;
+}
+
+.danger-button {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    background: #dc2626;
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.danger-button:hover {
+    background: #b91c1c;
+}
+
+.inline-form {
+    display: inline;
+}
+
+.large-textarea {
+    width: 100%;
+    min-height: 140px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    box-sizing: border-box;
+}
+
+.warning-text {
+    color: #b45309;
+    font-weight: 600;
+}
+
+.link-button {
+    display: inline-block;
+    text-decoration: none;
+}

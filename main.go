@@ -13,6 +13,7 @@ import (
 	"github.com/PeterTerpe/MeshBan/internal/api"
 	"github.com/PeterTerpe/MeshBan/internal/config"
 	"github.com/PeterTerpe/MeshBan/internal/database"
+	"github.com/PeterTerpe/MeshBan/internal/identity"
 )
 
 const (
@@ -70,12 +71,23 @@ func main() {
 
 	logger.Info("database migration completed")
 
+	// Load/create local identity
+	identityService, err := identity.LoadOrCreate(ctx, db, cfg.Node.DisplayName)
+	if err != nil {
+		logger.Error("failed to load or create local identity", "error", err)
+		os.Exit(1)
+	}
+
+	localIdentity := identityService.Current()
+	logger.Info("local identity loaded", "node_id", localIdentity.NodeID)
+
 	// Create the local API server.
 	apiServer := api.NewServer(api.Options{
-		ListenAddr: cfg.API.Listen,
-		Version:    Version,
-		Database:   db,
-		Logger:     logger,
+		ListenAddr:      cfg.API.Listen,
+		Version:         Version,
+		Database:        db,
+		IdentityService: identityService,
+		Logger:          logger,
 	})
 
 	// Start the local API server in the background.
