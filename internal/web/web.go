@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PeterTerpe/MeshBan/internal/auth"
 	"github.com/PeterTerpe/MeshBan/internal/config"
 	"github.com/PeterTerpe/MeshBan/internal/database"
 	peerdebug "github.com/PeterTerpe/MeshBan/internal/debug/peer"
@@ -58,6 +59,7 @@ type PageData struct {
 	HasKeyPassphrase bool
 	HasWebToken      bool
 	WebTokenPreview  string
+	LoginNext        string
 }
 
 func RegisterRoutes(mux *http.ServeMux, options Options) {
@@ -81,6 +83,8 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 
 	mux.HandleFunc("/ui", handler.handleDashboard)
 	mux.HandleFunc("/ui/", handler.handleDashboard)
+	mux.HandleFunc("/ui/login", handler.handleLoginPage)
+	mux.HandleFunc("/ui/logout", handler.handleLogout)
 
 	mux.HandleFunc("/ui/debug/database", handler.handleDatabaseDebug)
 	mux.HandleFunc("/ui/debug/peer", handler.handlePeerDebug)
@@ -632,4 +636,72 @@ func (h *Handler) handleCreateNewKeyPair(w http.ResponseWriter, r *http.Request)
 	}
 
 	redirectWithMessage(w, r, "/ui/identity", "new key pair created")
+}
+
+func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.renderPage(w, "login.html", PageData{
+			Title:        "Login",
+			Version:      h.version,
+			LoginNext:    safeLoginRedirect(r.URL.Query().Get("next")),
+			ErrorMessage: r.URL.Query().Get("error"),
+		})
+		return
+
+	case http.MethodPost:
+		if err := r.ParseForm(); err != nil {
+			redirectWithError(w, r, "/ui/login", "invalid form")
+			return
+		}
+
+		providedToken := strings.TrimSpace(r.FormValue("token"))
+		expectedToken := ""
+		if h.secretManager != nil {
+			expectedToken = strings.TrimSpace(h.secretManager.Get(secrets.WebTokenEnv))
+		}
+
+		if !auth.TokenMatches(providedToken, expectedToken) {
+			next := safeLoginRedirect(r.FormValue("next"))
+			http.Redirect(w, r, "/ui/login?next="+url.QueryEscape(next)+"&error="+url.QueryEscape("invalid token"), http.StatusSeeOther)
+			return
+		}
+
+		auth.SetSessionCookie(w, r, expectedToken)
+
+		http.Redirect(w, r, safeLoginRedirect(r.FormValue("next")), http.StatusSeeOther)
+		return
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+}
+
+func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	auth.ClearSessionCookie(w)
+	http.Redirect(w, r, "/ui/login", http.StatusSeeOther)
+}
+
+func safeLoginRedirect(value string) string {
+	value = strings.TrimSpace(value)
+
+	if value == "" {
+		return "/ui"
+	}
+
+	if !strings.HasPrefix(value, "/") {
+		return "/ui"
+	}
+
+	if strings.HasPrefix(value, "//") {
+		return "/ui"
+	}
+
+	return value
 }

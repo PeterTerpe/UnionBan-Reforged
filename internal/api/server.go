@@ -2,14 +2,15 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/PeterTerpe/MeshBan/internal/auth"
 	"github.com/PeterTerpe/MeshBan/internal/config"
 	"github.com/PeterTerpe/MeshBan/internal/database"
 	"github.com/PeterTerpe/MeshBan/internal/identity"
@@ -163,6 +164,11 @@ func adminAccessMiddleware(next http.Handler, cfg *config.Config, secretManager 
 			return
 		}
 
+		if isPublicWebUIPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		token := ""
 		if secretManager != nil {
 			token = strings.TrimSpace(secretManager.Get(secrets.WebTokenEnv))
@@ -173,34 +179,39 @@ func adminAccessMiddleware(next http.Handler, cfg *config.Config, secretManager 
 			return
 		}
 
-		if !requestHasValidToken(r, token) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		if auth.HasValidSession(r, token) {
+			next.ServeHTTP(w, r)
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		if auth.RequestHasValidToken(r, token) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if wantsHTML(r) && strings.HasPrefix(r.URL.Path, "/ui") {
+			loginURL := "/ui/login?next=" + url.QueryEscape(r.URL.RequestURI())
+			http.Redirect(w, r, loginURL, http.StatusSeeOther)
+			return
+		}
+
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	})
 }
 
-func requestHasValidToken(r *http.Request, token string) bool {
-	provided := ""
-
-	if value := strings.TrimSpace(r.Header.Get("X-MeshBan-Token")); value != "" {
-		provided = value
+func isPublicWebUIPath(path string) bool {
+	if path == "/ui/login" || path == "/ui/logout" {
+		return true
 	}
 
-	auth := strings.TrimSpace(r.Header.Get("Authorization"))
-	if strings.HasPrefix(auth, "Bearer ") {
-		provided = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	if strings.HasPrefix(path, "/ui/static/") {
+		return true
 	}
 
-	if value := strings.TrimSpace(r.URL.Query().Get("token")); value != "" {
-		provided = value
-	}
+	return false
+}
 
-	if provided == "" {
-		return false
-	}
-
-	return subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1
+func wantsHTML(r *http.Request) bool {
+	accept := r.Header.Get("Accept")
+	return strings.Contains(accept, "text/html") || accept == ""
 }

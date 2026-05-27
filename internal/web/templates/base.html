@@ -11,6 +11,12 @@
 <header>
     <h1>MeshBan WebUI</h1>
     <div>Version: {{.Version}}</div>
+
+    {{if ne .Title "Login"}}
+        <form method="post" action="/ui/logout" class="logout-form">
+            <button class="secondary-button" type="submit">Logout</button>
+        </form>
+    {{end}}
 </header>
 
 <main>

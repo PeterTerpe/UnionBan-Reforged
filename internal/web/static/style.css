@@ -209,3 +209,21 @@ hr {
     padding: 16px;
     margin-top: 18px;
 }
+
+.logout-form {
+    margin-top: 10px;
+}
+
+.secondary-button {
+    border: none;
+    border-radius: 10px;
+    padding: 8px 14px;
+    background: #374151;
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.secondary-button:hover {
+    background: #1f2937;
+}
