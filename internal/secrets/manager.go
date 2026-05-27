@@ -168,3 +168,16 @@ func randomSecret(byteSize int) (string, error) {
 
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
+
+func (m *Manager) RegenerateRandom(key string, byteSize int) (string, error) {
+	generated, err := randomSecret(byteSize)
+	if err != nil {
+		return "", err
+	}
+
+	if err := m.Set(key, generated); err != nil {
+		return "", err
+	}
+
+	return generated, nil
+}

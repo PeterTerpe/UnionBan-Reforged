@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -54,23 +55,17 @@ func main() {
 
 	logger.Info("configuration loaded", "config", *configPath)
 
-	secretManager, err := secrets.LoadOrCreate(cfg.Secrets.EnvFile)
+	// Load secrets from the env file.
+	secretStore, err := secrets.LoadOrCreate(cfg.Secrets.EnvFile)
 	if err != nil {
 		logger.Error("failed to load secrets", "error", err)
 		os.Exit(1)
 	}
 
-	webToken, err := secretManager.EnsureRandom(secrets.WebTokenEnv, 32)
-	if err != nil {
+	// Ensure the WebUI token exists.
+	if _, err := secretStore.EnsureRandom(secrets.WebTokenEnv, 32); err != nil {
 		logger.Error("failed to initialize WebUI token", "error", err)
 		os.Exit(1)
-	}
-
-	if cfg.Security.EncryptPrivateKey {
-		if _, err := secretManager.EnsureRandom(secrets.KeyPassphraseEnv, 32); err != nil {
-			logger.Error("failed to initialize key passphrase", "error", err)
-			os.Exit(1)
-		}
 	}
 
 	logger.Info("WebUI token initialized")
@@ -93,11 +88,33 @@ func main() {
 
 	logger.Info("database migration completed")
 
-	keyOptions := identity.KeyProtectionOptions{
-		EncryptPrivateKey: cfg.Security.EncryptPrivateKey,
-		Passphrase:        "",
+	// Initialize private key protection options.
+	keyPassphrase := ""
+
+	if cfg.Security.EncryptPrivateKey {
+		keyPassphrase = strings.TrimSpace(secretStore.Get(secrets.KeyPassphraseEnv))
+
+		if keyPassphrase == "" {
+			record, err := db.GetIdentity(ctx)
+			if err == nil && identity.IsEncryptedPrivateKey(record.PrivateKey) {
+				logger.Error("private key is encrypted but MESHBAN_KEY_PASSPHRASE is missing")
+				os.Exit(1)
+			}
+
+			keyPassphrase, err = secretStore.EnsureRandom(secrets.KeyPassphraseEnv, 32)
+			if err != nil {
+				logger.Error("failed to initialize key passphrase", "error", err)
+				os.Exit(1)
+			}
+		}
 	}
-	// Load/create local identity
+
+	keyOptions := identity.KeyOptions{
+		EncryptPrivateKey: cfg.Security.EncryptPrivateKey,
+		Passphrase:        keyPassphrase,
+	}
+
+	// Load or create the local identity.
 	identityService, err := identity.LoadOrCreate(ctx, db, cfg.Node.DisplayName, keyOptions)
 	if err != nil {
 		logger.Error("failed to load or create local identity", "error", err)
@@ -107,15 +124,16 @@ func main() {
 	localIdentity := identityService.Current()
 	logger.Info("local identity loaded", "node_id", localIdentity.NodeID)
 
-	// Create the local API server.
+	// Create the local API and WebUI server.
 	apiServer := api.NewServer(api.Options{
-		ListenAddr:            cfg.WebUI.Listen,
-		Version:               Version,
-		Database:              db,
-		IdentityService:       identityService,
-		RequireTokenForRemote: cfg.WebUI.RequireTokenForRemote,
-		WebToken:              webToken,
-		Logger:                logger,
+		ListenAddr:      cfg.WebUI.Listen,
+		Version:         Version,
+		Database:        db,
+		IdentityService: identityService,
+		Config:          cfg,
+		ConfigPath:      *configPath,
+		SecretManager:   secretStore,
+		Logger:          logger,
 	})
 
 	// Start the local API server in the background.

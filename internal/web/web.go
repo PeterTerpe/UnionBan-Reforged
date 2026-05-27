@@ -12,9 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PeterTerpe/MeshBan/internal/config"
 	"github.com/PeterTerpe/MeshBan/internal/database"
 	peerdebug "github.com/PeterTerpe/MeshBan/internal/debug/peer"
 	"github.com/PeterTerpe/MeshBan/internal/identity"
+	"github.com/PeterTerpe/MeshBan/internal/secrets"
 )
 
 //go:embed templates/*.html static/*
@@ -24,6 +26,9 @@ type Options struct {
 	Version         string
 	Database        *database.Database
 	IdentityService *identity.Service
+	Config          *config.Config
+	ConfigPath      string
+	SecretManager   *secrets.Manager
 	Logger          *slog.Logger
 }
 
@@ -31,20 +36,27 @@ type Handler struct {
 	version         string
 	database        *database.Database
 	identityService *identity.Service
+	config          *config.Config
+	configPath      string
+	secretManager   *secrets.Manager
 	logger          *slog.Logger
 }
 
 type PageData struct {
-	Title           string
-	Version         string
-	DatabaseResult  *database.DebugInfo
-	PeerResult      *peerdebug.Result
-	PeerAddress     string
-	BanEntries      []database.BanEntry
-	Message         string
-	ErrorMessage    string
-	LocalIdentity   *identity.Identity
-	ExportedKeyPair string
+	Title            string
+	Version          string
+	DatabaseResult   *database.DebugInfo
+	PeerResult       *peerdebug.Result
+	PeerAddress      string
+	BanEntries       []database.BanEntry
+	Message          string
+	ErrorMessage     string
+	LocalIdentity    *identity.Identity
+	ExportedKeyPair  string
+	Config           *config.Config
+	HasKeyPassphrase bool
+	HasWebToken      bool
+	WebTokenPreview  string
 }
 
 func RegisterRoutes(mux *http.ServeMux, options Options) {
@@ -52,6 +64,9 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 		version:         options.Version,
 		database:        options.Database,
 		identityService: options.IdentityService,
+		config:          options.Config,
+		configPath:      options.ConfigPath,
+		secretManager:   options.SecretManager,
 		logger:          options.Logger,
 	}
 
@@ -77,6 +92,12 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 	mux.HandleFunc("/ui/identity", handler.handleIdentityPage)
 	mux.HandleFunc("/ui/identity/export", handler.handleExportIdentity)
 	mux.HandleFunc("/ui/identity/import", handler.handleImportIdentity)
+
+	mux.HandleFunc("/ui/settings/security", handler.handleSecuritySettingsPage)
+	mux.HandleFunc("/ui/settings/security/webui", handler.handleUpdateWebUISettings)
+	mux.HandleFunc("/ui/settings/security/passphrase", handler.handleUpdatePassphrase)
+	mux.HandleFunc("/ui/settings/security/disable-encryption", handler.handleDisablePrivateKeyEncryption)
+	mux.HandleFunc("/ui/settings/security/token/regenerate", handler.handleRegenerateWebToken)
 }
 
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -424,4 +445,161 @@ func (h *Handler) handleImportIdentity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/ui/identity?message=key pair imported", http.StatusSeeOther)
+}
+
+func (h *Handler) handleSecuritySettingsPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	webToken := h.secretManager.Get(secrets.WebTokenEnv)
+
+	h.renderPage(w, "security.html", PageData{
+		Title:            "Security Settings",
+		Version:          h.version,
+		Config:           h.config,
+		HasKeyPassphrase: strings.TrimSpace(h.secretManager.Get(secrets.KeyPassphraseEnv)) != "",
+		HasWebToken:      strings.TrimSpace(webToken) != "",
+		WebTokenPreview:  previewSecret(webToken),
+		Message:          r.URL.Query().Get("message"),
+		ErrorMessage:     r.URL.Query().Get("error"),
+	})
+}
+
+func (h *Handler) handleUpdateWebUISettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", "invalid form")
+		return
+	}
+
+	listen := strings.TrimSpace(r.FormValue("listen"))
+	if listen == "" {
+		redirectWithError(w, r, "/ui/settings/security", "listen address is required")
+		return
+	}
+
+	h.config.WebUI.Listen = listen
+	h.config.WebUI.RequireTokenForRemote = r.FormValue("require_token_for_remote") == "on"
+
+	if err := config.Save(h.configPath, h.config); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", err.Error())
+		return
+	}
+
+	redirectWithMessage(w, r, "/ui/settings/security", "WebUI settings updated. Restart is required for listen address changes.")
+}
+
+func (h *Handler) handleUpdatePassphrase(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", "invalid form")
+		return
+	}
+
+	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
+	if newPassphrase == "" {
+		redirectWithError(w, r, "/ui/settings/security", "new passphrase is required")
+		return
+	}
+
+	keyOptions := identity.KeyOptions{
+		EncryptPrivateKey: true,
+		Passphrase:        newPassphrase,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.identityService.UpdateKeyProtection(ctx, keyOptions); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", err.Error())
+		return
+	}
+
+	if err := h.secretManager.Set(secrets.KeyPassphraseEnv, newPassphrase); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", err.Error())
+		return
+	}
+
+	h.config.Security.EncryptPrivateKey = true
+
+	if err := config.Save(h.configPath, h.config); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", err.Error())
+		return
+	}
+
+	redirectWithMessage(w, r, "/ui/settings/security", "private key passphrase updated")
+}
+
+func (h *Handler) handleDisablePrivateKeyEncryption(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	currentPassphrase := h.secretManager.Get(secrets.KeyPassphraseEnv)
+
+	keyOptions := identity.KeyOptions{
+		EncryptPrivateKey: false,
+		Passphrase:        currentPassphrase,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.identityService.UpdateKeyProtection(ctx, keyOptions); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", err.Error())
+		return
+	}
+
+	if err := h.secretManager.Delete(secrets.KeyPassphraseEnv); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", err.Error())
+		return
+	}
+
+	h.config.Security.EncryptPrivateKey = false
+
+	if err := config.Save(h.configPath, h.config); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", err.Error())
+		return
+	}
+
+	redirectWithMessage(w, r, "/ui/settings/security", "private key encryption disabled")
+}
+
+func (h *Handler) handleRegenerateWebToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if _, err := h.secretManager.RegenerateRandom(secrets.WebTokenEnv, 32); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", err.Error())
+		return
+	}
+
+	redirectWithMessage(w, r, "/ui/settings/security", "WebUI token regenerated")
+}
+
+func previewSecret(value string) string {
+	value = strings.TrimSpace(value)
+
+	if value == "" {
+		return "-"
+	}
+
+	if len(value) <= 10 {
+		return value
+	}
+
+	return value[:6] + "..." + value[len(value)-4:]
 }

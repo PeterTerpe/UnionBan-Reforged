@@ -1,0 +1,67 @@
+{{define "content"}}
+<div class="card">
+    <h2>Security Settings</h2>
+    <p><a href="/ui">Back to dashboard</a></p>
+
+    {{if .Message}}
+        <p class="result-ok">{{.Message}}</p>
+    {{end}}
+
+    {{if .ErrorMessage}}
+        <p class="result-error">{{.ErrorMessage}}</p>
+    {{end}}
+</div>
+
+<div class="card">
+    <h2>WebUI Access</h2>
+
+    <form method="post" action="/ui/settings/security/webui">
+        <label>WebUI Listen Address</label>
+        <input class="input" name="listen" value="{{.Config.WebUI.Listen}}">
+
+        <label>
+            <input type="checkbox" name="require_token_for_remote" {{if .Config.WebUI.RequireTokenForRemote}}checked{{end}}>
+            Require token for non-local access
+        </label>
+
+        <p class="warning-text">Listen address changes require restart.</p>
+
+        <button class="button" type="submit">Save WebUI Settings</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>WebUI Token</h2>
+
+    <p>Token configured: <strong>{{.HasWebToken}}</strong></p>
+    <p>Current token preview: <code>{{.WebTokenPreview}}</code></p>
+
+    <form method="post" action="/ui/settings/security/token/regenerate">
+        <button class="danger-button" type="submit">Regenerate WebUI Token</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Private Key Encryption</h2>
+
+    <p>Encryption enabled in config: <strong>{{.Config.Security.EncryptPrivateKey}}</strong></p>
+    <p>Passphrase configured: <strong>{{.HasKeyPassphrase}}</strong></p>
+
+    <form method="post" action="/ui/settings/security/passphrase">
+        <label>New Passphrase</label>
+        <input class="input" name="new_passphrase" type="password" placeholder="New private key passphrase">
+
+        <button class="button" type="submit">Enable or Change Passphrase</button>
+    </form>
+
+    <hr>
+
+    <form method="post" action="/ui/settings/security/disable-encryption">
+        <p class="warning-text">
+            Disabling encryption stores the local private key in plaintext inside the SQLite database.
+        </p>
+
+        <button class="danger-button" type="submit">Disable Private Key Encryption</button>
+    </form>
+</div>
+{{end}}

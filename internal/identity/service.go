@@ -27,7 +27,7 @@ type Service struct {
 	mu         sync.RWMutex
 	database   *database.Database
 	current    *Identity
-	keyOptions KeyProtectionOptions
+	keyOptions KeyOptions
 }
 
 type Identity struct {
@@ -57,12 +57,12 @@ type KeyPairExport struct {
 	ExportedAt  int64  `json:"exported_at"`
 }
 
-type KeyProtectionOptions struct {
+type KeyOptions struct {
 	EncryptPrivateKey bool
 	Passphrase        string
 }
 
-func LoadOrCreate(ctx context.Context, db *database.Database, displayName string, keyOptions KeyProtectionOptions) (*Service, error) {
+func LoadOrCreate(ctx context.Context, db *database.Database, displayName string, keyOptions KeyOptions) (*Service, error) {
 	service := &Service{
 		database:   db,
 		keyOptions: keyOptions,
@@ -71,6 +71,11 @@ func LoadOrCreate(ctx context.Context, db *database.Database, displayName string
 	record, err := db.GetIdentity(ctx)
 	if err == nil {
 		service.current = identityFromRecord(record)
+
+		if err := service.upgradePrivateKeyStorage(ctx); err != nil {
+			return nil, err
+		}
+
 		return service, nil
 	}
 
@@ -78,7 +83,7 @@ func LoadOrCreate(ctx context.Context, db *database.Database, displayName string
 		return nil, err
 	}
 
-	identity, err := generateIdentity(displayName)
+	identity, err := generateIdentity(displayName, keyOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -135,21 +140,16 @@ func (s *Service) ImportKeyPairJSON(ctx context.Context, raw []byte) error {
 		return fmt.Errorf("invalid public key: %w", err)
 	}
 
-	privateKeyBytes, err := decodeBase64(exported.PrivateKey)
-	if err != nil {
-		return fmt.Errorf("invalid private key: %w", err)
-	}
-
 	if len(publicKeyBytes) != ed25519.PublicKeySize {
 		return errors.New("invalid public key size")
 	}
 
-	if len(privateKeyBytes) != ed25519.PrivateKeySize {
-		return errors.New("invalid private key size")
+	privateKey, err := decodeStoredPrivateKey(exported.PrivateKey, s.keyOptions)
+	if err != nil {
+		return fmt.Errorf("invalid private key: %w", err)
 	}
 
 	publicKey := ed25519.PublicKey(publicKeyBytes)
-	privateKey := ed25519.PrivateKey(privateKeyBytes)
 
 	derivedPublicKey, ok := privateKey.Public().(ed25519.PublicKey)
 	if !ok {
@@ -165,17 +165,22 @@ func (s *Service) ImportKeyPairJSON(ctx context.Context, raw []byte) error {
 		return errors.New("node_id does not match public key")
 	}
 
+	protectedPrivateKey, err := protectPrivateKey(privateKey, s.keyOptions)
+	if err != nil {
+		return err
+	}
+
 	now := time.Now().Unix()
 
 	identity := &Identity{
 		NodeID:     exported.NodeID,
 		PublicKey:  exported.PublicKey,
-		PrivateKey: exported.PrivateKey,
+		PrivateKey: protectedPrivateKey,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
 
-	certificate, err := createCertificate(identity, "Imported MeshBan Node")
+	certificate, err := createCertificate(identity, "Imported MeshBan Node", s.keyOptions)
 	if err != nil {
 		return err
 	}
@@ -197,16 +202,10 @@ func (s *Service) SignLocalBan(playerUUID string, reason string, sourceNodeID st
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	privateKeyBytes, err := decodeBase64(s.current.PrivateKey)
+	privateKey, err := decodeStoredPrivateKey(s.current.PrivateKey, s.keyOptions)
 	if err != nil {
 		return "", err
 	}
-
-	if len(privateKeyBytes) != ed25519.PrivateKeySize {
-		return "", errors.New("invalid private key size")
-	}
-
-	privateKey := ed25519.PrivateKey(privateKeyBytes)
 
 	message := buildBanSignaturePayload(playerUUID, reason, sourceNodeID, updatedAt)
 	signature := ed25519.Sign(privateKey, []byte(message))
@@ -214,7 +213,7 @@ func (s *Service) SignLocalBan(playerUUID string, reason string, sourceNodeID st
 	return encodeBase64(signature), nil
 }
 
-func generateIdentity(displayName string) (*Identity, error) {
+func generateIdentity(displayName string, keyOptions KeyOptions) (*Identity, error) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, err
@@ -222,15 +221,20 @@ func generateIdentity(displayName string) (*Identity, error) {
 
 	now := time.Now().Unix()
 
+	protectedPrivateKey, err := protectPrivateKey(privateKey, keyOptions)
+	if err != nil {
+		return nil, err
+	}
+
 	identity := &Identity{
 		NodeID:     NodeIDFromPublicKey(publicKey),
 		PublicKey:  encodeBase64(publicKey),
-		PrivateKey: encodeBase64(privateKey),
+		PrivateKey: protectedPrivateKey,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
 
-	certificate, err := createCertificate(identity, displayName)
+	certificate, err := createCertificate(identity, displayName, keyOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -240,17 +244,11 @@ func generateIdentity(displayName string) (*Identity, error) {
 	return identity, nil
 }
 
-func createCertificate(identity *Identity, displayName string) (string, error) {
-	privateKeyBytes, err := decodeBase64(identity.PrivateKey)
+func createCertificate(identity *Identity, displayName string, keyOptions KeyOptions) (string, error) {
+	privateKey, err := decodeStoredPrivateKey(identity.PrivateKey, keyOptions)
 	if err != nil {
 		return "", err
 	}
-
-	if len(privateKeyBytes) != ed25519.PrivateKeySize {
-		return "", errors.New("invalid private key size")
-	}
-
-	privateKey := ed25519.PrivateKey(privateKeyBytes)
 
 	cert := Certificate{
 		Type:        certificateType,
@@ -330,4 +328,53 @@ func encodeBase64(data []byte) string {
 
 func decodeBase64(value string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(strings.TrimSpace(value))
+}
+
+func (s *Service) UpdateKeyProtection(ctx context.Context, keyOptions KeyOptions) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	privateKey, err := decodeStoredPrivateKey(s.current.PrivateKey, s.keyOptions)
+	if err != nil {
+		return err
+	}
+
+	protectedPrivateKey, err := protectPrivateKey(privateKey, keyOptions)
+	if err != nil {
+		return err
+	}
+
+	s.current.PrivateKey = protectedPrivateKey
+	s.current.UpdatedAt = time.Now().Unix()
+	s.keyOptions = keyOptions
+
+	return s.database.SaveIdentity(ctx, s.current.toRecord())
+}
+
+func (s *Service) upgradePrivateKeyStorage(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.keyOptions.EncryptPrivateKey {
+		return nil
+	}
+
+	if IsEncryptedPrivateKey(s.current.PrivateKey) {
+		return nil
+	}
+
+	privateKey, err := decodeStoredPrivateKey(s.current.PrivateKey, s.keyOptions)
+	if err != nil {
+		return err
+	}
+
+	protectedPrivateKey, err := protectPrivateKey(privateKey, s.keyOptions)
+	if err != nil {
+		return err
+	}
+
+	s.current.PrivateKey = protectedPrivateKey
+	s.current.UpdatedAt = time.Now().Unix()
+
+	return s.database.SaveIdentity(ctx, s.current.toRecord())
 }

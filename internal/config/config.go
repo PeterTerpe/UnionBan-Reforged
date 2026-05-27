@@ -50,7 +50,6 @@ type P2PConfig struct {
 }
 
 func LoadOrCreate(path string, examplePath string) (*Config, error) {
-	// Create the config file from the example file if it does not exist.
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if err := createConfigFromExample(path, examplePath); err != nil {
@@ -65,7 +64,6 @@ func LoadOrCreate(path string, examplePath string) (*Config, error) {
 }
 
 func Load(path string) (*Config, error) {
-	// Read the configuration file from disk.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -73,25 +71,30 @@ func Load(path string) (*Config, error) {
 
 	var cfg Config
 
-	// Decode YAML content into the Config struct.
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
 
-	// Fill default values when fields are not set.
 	applyDefaults(&cfg)
 
 	return &cfg, nil
 }
 
+func Save(path string, cfg *Config) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
 func createConfigFromExample(path string, examplePath string) error {
-	// Read the example configuration file.
 	data, err := os.ReadFile(examplePath)
 	if err != nil {
 		return fmt.Errorf("failed to read example config %q: %w", examplePath, err)
 	}
 
-	// Create the parent directory for the target config file if needed.
 	dir := filepath.Dir(path)
 	if dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -99,7 +102,6 @@ func createConfigFromExample(path string, examplePath string) error {
 		}
 	}
 
-	// Write the new config file without overwriting an existing file.
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to create config file %q: %w", path, err)
@@ -117,13 +119,16 @@ func applyDefaults(cfg *Config) {
 	if cfg.Node.DisplayName == "" {
 		cfg.Node.DisplayName = "New MeshBan Node"
 	}
+
 	if cfg.Database.Path == "" {
 		cfg.Database.Path = "./data/meshban.db"
 	}
-	if cfg.Secrets.EnvFile == "" {
-		cfg.Secrets.EnvFile = ".env"
-	}
+
 	if cfg.WebUI.Listen == "" {
 		cfg.WebUI.Listen = "127.0.0.1:30000"
+	}
+
+	if cfg.Secrets.EnvFile == "" {
+		cfg.Secrets.EnvFile = ".env"
 	}
 }

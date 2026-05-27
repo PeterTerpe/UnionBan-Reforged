@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"net"
@@ -9,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PeterTerpe/MeshBan/internal/config"
 	"github.com/PeterTerpe/MeshBan/internal/database"
 	"github.com/PeterTerpe/MeshBan/internal/identity"
+	"github.com/PeterTerpe/MeshBan/internal/secrets"
 	"github.com/PeterTerpe/MeshBan/internal/web"
 )
 
@@ -23,13 +26,14 @@ type Server struct {
 }
 
 type Options struct {
-	ListenAddr            string
-	Version               string
-	Database              *database.Database
-	IdentityService       *identity.Service
-	RequireTokenForRemote bool
-	WebToken              string
-	Logger                *slog.Logger
+	ListenAddr      string
+	Version         string
+	Database        *database.Database
+	IdentityService *identity.Service
+	Config          *config.Config
+	ConfigPath      string
+	SecretManager   *secrets.Manager
+	Logger          *slog.Logger
 }
 
 type StatusResponse struct {
@@ -52,7 +56,7 @@ func NewServer(options Options) *Server {
 
 	mux.HandleFunc("/api/v1/status", s.handleStatus)
 
-	handler := adminAccessMiddleware(mux, options.RequireTokenForRemote, options.WebToken)
+	handler := adminAccessMiddleware(mux, options.Config, options.SecretManager)
 	s.server = &http.Server{
 		Addr:              options.ListenAddr,
 		Handler:           handler,
@@ -63,6 +67,9 @@ func NewServer(options Options) *Server {
 		Version:         options.Version,
 		Database:        options.Database,
 		IdentityService: options.IdentityService,
+		Config:          options.Config,
+		ConfigPath:      options.ConfigPath,
+		SecretManager:   options.SecretManager,
 		Logger:          options.Logger,
 	})
 
@@ -128,23 +135,6 @@ func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 	_ = encoder.Encode(value)
 }
 
-func localOnlyAdminMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Keep the status endpoint available for basic health checks.
-		if r.URL.Path == "/api/v1/status" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		if !isLoopbackRequest(r) {
-			http.Error(w, "admin interface is only available from localhost", http.StatusForbidden)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
 func isLoopbackRequest(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -161,16 +151,21 @@ func isLoopbackRequest(r *http.Request) bool {
 	return ip.IsLoopback()
 }
 
-func adminAccessMiddleware(next http.Handler, requireTokenForRemote bool, token string) http.Handler {
+func adminAccessMiddleware(next http.Handler, cfg *config.Config, secretManager *secrets.Manager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isLoopbackRequest(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		if !requireTokenForRemote {
+		if cfg != nil && !cfg.WebUI.RequireTokenForRemote {
 			next.ServeHTTP(w, r)
 			return
+		}
+
+		token := ""
+		if secretManager != nil {
+			token = strings.TrimSpace(secretManager.Get(secrets.WebTokenEnv))
 		}
 
 		if token == "" {
@@ -188,18 +183,24 @@ func adminAccessMiddleware(next http.Handler, requireTokenForRemote bool, token 
 }
 
 func requestHasValidToken(r *http.Request, token string) bool {
-	if r.Header.Get("X-MeshBan-Token") == token {
-		return true
+	provided := ""
+
+	if value := strings.TrimSpace(r.Header.Get("X-MeshBan-Token")); value != "" {
+		provided = value
 	}
 
-	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") && strings.TrimPrefix(auth, "Bearer ") == token {
-		return true
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(auth, "Bearer ") {
+		provided = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	}
 
-	if r.URL.Query().Get("token") == token {
-		return true
+	if value := strings.TrimSpace(r.URL.Query().Get("token")); value != "" {
+		provided = value
 	}
 
-	return false
+	if provided == "" {
+		return false
+	}
+
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1
 }
