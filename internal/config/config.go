@@ -12,8 +12,9 @@ import (
 type Config struct {
 	Node     NodeConfig     `yaml:"node"`
 	Database DatabaseConfig `yaml:"database"`
-	API      APIConfig      `yaml:"api"`
-	Policy   PolicyConfig   `yaml:"policy"`
+	WebUI    WebUIConfig    `yaml:"webui"`
+	Security SecurityConfig `yaml:"security"`
+	Secrets  SecretsConfig  `yaml:"secrets"`
 	P2P      P2PConfig      `yaml:"p2p"`
 }
 
@@ -30,10 +31,17 @@ type APIConfig struct {
 	Token  string `yaml:"token"`
 }
 
-type PolicyConfig struct {
-	AlertScore  int `yaml:"alert_score"`
-	ReviewScore int `yaml:"review_score"`
-	DenyScore   int `yaml:"deny_score"`
+type WebUIConfig struct {
+	Listen                string `yaml:"listen"`
+	RequireTokenForRemote bool   `yaml:"require_token_for_remote"`
+}
+
+type SecurityConfig struct {
+	EncryptPrivateKey bool `yaml:"encrypt_private_key"`
+}
+
+type SecretsConfig struct {
+	EnvFile string `yaml:"env_file"`
 }
 
 type P2PConfig struct {
@@ -109,24 +117,13 @@ func applyDefaults(cfg *Config) {
 	if cfg.Node.DisplayName == "" {
 		cfg.Node.DisplayName = "New MeshBan Node"
 	}
-
 	if cfg.Database.Path == "" {
 		cfg.Database.Path = "./data/meshban.db"
 	}
-
-	if cfg.API.Listen == "" {
-		cfg.API.Listen = "127.0.0.1:30000"
+	if cfg.Secrets.EnvFile == "" {
+		cfg.Secrets.EnvFile = ".env"
 	}
-
-	if cfg.Policy.AlertScore == 0 {
-		cfg.Policy.AlertScore = 30
-	}
-
-	if cfg.Policy.ReviewScore == 0 {
-		cfg.Policy.ReviewScore = 60
-	}
-
-	if cfg.Policy.DenyScore == 0 {
-		cfg.Policy.DenyScore = 90
+	if cfg.WebUI.Listen == "" {
+		cfg.WebUI.Listen = "127.0.0.1:30000"
 	}
 }

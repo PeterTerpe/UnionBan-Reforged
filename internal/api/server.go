@@ -23,11 +23,13 @@ type Server struct {
 }
 
 type Options struct {
-	ListenAddr      string
-	Version         string
-	Database        *database.Database
-	IdentityService *identity.Service
-	Logger          *slog.Logger
+	ListenAddr            string
+	Version               string
+	Database              *database.Database
+	IdentityService       *identity.Service
+	RequireTokenForRemote bool
+	WebToken              string
+	Logger                *slog.Logger
 }
 
 type StatusResponse struct {
@@ -50,9 +52,10 @@ func NewServer(options Options) *Server {
 
 	mux.HandleFunc("/api/v1/status", s.handleStatus)
 
+	handler := adminAccessMiddleware(mux, options.RequireTokenForRemote, options.WebToken)
 	s.server = &http.Server{
 		Addr:              options.ListenAddr,
-		Handler:           localOnlyAdminMiddleware(mux),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -156,4 +159,47 @@ func isLoopbackRequest(r *http.Request) bool {
 	}
 
 	return ip.IsLoopback()
+}
+
+func adminAccessMiddleware(next http.Handler, requireTokenForRemote bool, token string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isLoopbackRequest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if !requireTokenForRemote {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if token == "" {
+			http.Error(w, "remote access token is not configured", http.StatusForbidden)
+			return
+		}
+
+		if !requestHasValidToken(r, token) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func requestHasValidToken(r *http.Request, token string) bool {
+	if r.Header.Get("X-MeshBan-Token") == token {
+		return true
+	}
+
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(auth, "Bearer ") && strings.TrimPrefix(auth, "Bearer ") == token {
+		return true
+	}
+
+	if r.URL.Query().Get("token") == token {
+		return true
+	}
+
+	return false
 }

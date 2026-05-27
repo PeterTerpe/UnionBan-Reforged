@@ -4,9 +4,15 @@ node:
 database:
   path: "./data/meshban.db"
 
-api:
+webui:
   listen: "127.0.0.1:30000"
-  token: "change-me"
+  require_token_for_remote: true
+
+security:
+  encrypt_private_key: true
+
+secrets:
+  env_file: ".env"
 
 p2p:
   enabled: false

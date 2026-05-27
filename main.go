@@ -14,6 +14,7 @@ import (
 	"github.com/PeterTerpe/MeshBan/internal/config"
 	"github.com/PeterTerpe/MeshBan/internal/database"
 	"github.com/PeterTerpe/MeshBan/internal/identity"
+	"github.com/PeterTerpe/MeshBan/internal/secrets"
 )
 
 const (
@@ -53,6 +54,27 @@ func main() {
 
 	logger.Info("configuration loaded", "config", *configPath)
 
+	secretManager, err := secrets.LoadOrCreate(cfg.Secrets.EnvFile)
+	if err != nil {
+		logger.Error("failed to load secrets", "error", err)
+		os.Exit(1)
+	}
+
+	webToken, err := secretManager.EnsureRandom(secrets.WebTokenEnv, 32)
+	if err != nil {
+		logger.Error("failed to initialize WebUI token", "error", err)
+		os.Exit(1)
+	}
+
+	if cfg.Security.EncryptPrivateKey {
+		if _, err := secretManager.EnsureRandom(secrets.KeyPassphraseEnv, 32); err != nil {
+			logger.Error("failed to initialize key passphrase", "error", err)
+			os.Exit(1)
+		}
+	}
+
+	logger.Info("WebUI token initialized")
+
 	// Open the local SQLite database.
 	db, err := database.Open(cfg.Database.Path)
 	if err != nil {
@@ -71,8 +93,12 @@ func main() {
 
 	logger.Info("database migration completed")
 
+	keyOptions := identity.KeyProtectionOptions{
+		EncryptPrivateKey: cfg.Security.EncryptPrivateKey,
+		Passphrase:        "",
+	}
 	// Load/create local identity
-	identityService, err := identity.LoadOrCreate(ctx, db, cfg.Node.DisplayName)
+	identityService, err := identity.LoadOrCreate(ctx, db, cfg.Node.DisplayName, keyOptions)
 	if err != nil {
 		logger.Error("failed to load or create local identity", "error", err)
 		os.Exit(1)
@@ -83,16 +109,18 @@ func main() {
 
 	// Create the local API server.
 	apiServer := api.NewServer(api.Options{
-		ListenAddr:      cfg.API.Listen,
-		Version:         Version,
-		Database:        db,
-		IdentityService: identityService,
-		Logger:          logger,
+		ListenAddr:            cfg.WebUI.Listen,
+		Version:               Version,
+		Database:              db,
+		IdentityService:       identityService,
+		RequireTokenForRemote: cfg.WebUI.RequireTokenForRemote,
+		WebToken:              webToken,
+		Logger:                logger,
 	})
 
 	// Start the local API server in the background.
 	go func() {
-		logger.Info("starting local API server", "listen", cfg.API.Listen)
+		logger.Info("starting local API server", "listen", cfg.WebUI.Listen)
 
 		if err := apiServer.Start(ctx); err != nil {
 			logger.Error("local API server stopped with error", "error", err)

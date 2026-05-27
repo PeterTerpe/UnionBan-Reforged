@@ -24,9 +24,10 @@ const (
 )
 
 type Service struct {
-	mu       sync.RWMutex
-	database *database.Database
-	current  *Identity
+	mu         sync.RWMutex
+	database   *database.Database
+	current    *Identity
+	keyOptions KeyProtectionOptions
 }
 
 type Identity struct {
@@ -56,9 +57,15 @@ type KeyPairExport struct {
 	ExportedAt  int64  `json:"exported_at"`
 }
 
-func LoadOrCreate(ctx context.Context, db *database.Database, displayName string) (*Service, error) {
+type KeyProtectionOptions struct {
+	EncryptPrivateKey bool
+	Passphrase        string
+}
+
+func LoadOrCreate(ctx context.Context, db *database.Database, displayName string, keyOptions KeyProtectionOptions) (*Service, error) {
 	service := &Service{
-		database: db,
+		database:   db,
+		keyOptions: keyOptions,
 	}
 
 	record, err := db.GetIdentity(ctx)
