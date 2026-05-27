@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"html/template"
@@ -177,8 +178,6 @@ func (h *Handler) renderDashboard(w http.ResponseWriter, data PageData) {
 }
 
 func (h *Handler) renderPage(w http.ResponseWriter, page string, data PageData) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
 	funcs := template.FuncMap{
 		"formatUnix": formatUnix,
 	}
@@ -194,10 +193,18 @@ func (h *Handler) renderPage(w http.ResponseWriter, page string, data PageData) 
 		return
 	}
 
-	if err := templates.ExecuteTemplate(w, "base", data); err != nil {
+	var buffer bytes.Buffer
+
+	if err := templates.ExecuteTemplate(&buffer, "base", data); err != nil {
 		h.logger.Error("failed to render WebUI template", "error", err)
 		http.Error(w, "failed to render page", http.StatusInternalServerError)
+		return
 	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+
+	_, _ = w.Write(buffer.Bytes())
 }
 
 func formatUnix(timestamp int64) string {
@@ -306,7 +313,7 @@ func (h *Handler) handleUpdateBanEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/ui/database?message=ban entry updated", http.StatusSeeOther)
+	redirectWithMessage(w, r, "/ui/database", "ban entry updated")
 }
 
 func (h *Handler) handleDeleteBanEntry(w http.ResponseWriter, r *http.Request) {
@@ -334,7 +341,7 @@ func (h *Handler) handleDeleteBanEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/ui/database?message=ban entry deleted", http.StatusSeeOther)
+	redirectWithMessage(w, r, "/ui/database", "ban entry deleted")
 }
 
 func (h *Handler) renderDatabasePage(w http.ResponseWriter, r *http.Request, data PageData) {
@@ -444,7 +451,7 @@ func (h *Handler) handleImportIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/ui/identity?message=key pair imported", http.StatusSeeOther)
+	redirectWithMessage(w, r, "/ui/identity", "key pair imported")
 }
 
 func (h *Handler) handleSecuritySettingsPage(w http.ResponseWriter, r *http.Request) {

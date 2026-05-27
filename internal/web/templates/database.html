@@ -23,7 +23,7 @@
         <label>Reason</label>
         <input class="input" name="reason" placeholder="cheating">
 
-        <p>
+        <p class="warning-text">
             Source node ID and signature will be generated automatically by the local identity.
         </p>
 
@@ -35,41 +35,42 @@
     <h2>Local Banlist</h2>
 
     {{if .BanEntries}}
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Player UUID</th>
-                    <th>Reason</th>
-                    <th>Source Node ID</th>
-                    <th>Signature</th>
-                    <th>Created At</th>
-                    <th>Updated At</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                {{range .BanEntries}}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
                     <tr>
-                        <td>{{.ID}}</td>
+                        <th>ID</th>
+                        <th>Player UUID</th>
+                        <th>Reason</th>
+                        <th>Source Node ID</th>
+                        <th>Signature</th>
+                        <th>Created At</th>
+                        <th>Updated At</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
 
-                        <form method="post" action="/ui/database/banlist/update">
+                <tbody>
+                    {{range .BanEntries}}
+                        <tr>
                             <td>
-                                <input type="hidden" name="id" value="{{.ID}}">
-                                <input class="table-input" name="player_uuid" value="{{.PlayerUUID}}">
+                                {{.ID}}
                             </td>
 
                             <td>
-                                <input class="table-input" name="reason" value="{{.Reason}}">
+                                <input form="update-ban-{{.ID}}" class="table-input" name="player_uuid" value="{{.PlayerUUID}}">
                             </td>
 
                             <td>
-                                <code>{{.SourceNodeID}}</code>
+                                <input form="update-ban-{{.ID}}" class="table-input" name="reason" value="{{.Reason}}">
                             </td>
 
                             <td>
-                                <code>{{.Signature}}</code>
+                                <code class="long-code">{{.SourceNodeID}}</code>
+                            </td>
+
+                            <td class="signature-cell">
+                                <code title="{{.Signature}}">{{.Signature}}</code>
                             </td>
 
                             <td>
@@ -81,18 +82,24 @@
                             </td>
 
                             <td>
-                                <button class="button small-button" type="submit">Update</button>
-                        </form>
+                                <form id="update-ban-{{.ID}}" method="post" action="/ui/database/banlist/update" class="inline-form">
+                                    <input type="hidden" name="id" value="{{.ID}}">
+                                    <button class="button small-button" type="submit">Update</button>
+                                </form>
 
-                                <form method="post" action="/ui/database/banlist/delete" class="inline-form">
+                                <form method="post"
+                                    action="/ui/database/banlist/delete"
+                                    class="inline-form"
+                                    onsubmit="return confirm('Delete this ban entry? This action cannot be undone.')">
                                     <input type="hidden" name="id" value="{{.ID}}">
                                     <button class="danger-button small-button" type="submit">Delete</button>
                                 </form>
                             </td>
-                    </tr>
-                {{end}}
-            </tbody>
-        </table>
+                        </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
     {{else}}
         <p>No ban entries found.</p>
     {{end}}

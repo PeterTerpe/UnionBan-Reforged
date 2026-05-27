@@ -143,3 +143,69 @@ label {
     display: inline-block;
     text-decoration: none;
 }
+
+code {
+    word-break: break-all;
+}
+
+input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 18px 0;
+}
+
+.table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.data-table {
+    min-width: 1200px;
+}
+
+.data-table code {
+    white-space: nowrap;
+    word-break: normal;
+}
+
+.signature-cell code,
+.long-code {
+    display: inline-block;
+    max-width: 420px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+}
+
+.danger-zone {
+    border: 1px solid #fecaca;
+    background: #fff7f7;
+}
+
+.advanced-section summary {
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 1.05rem;
+    user-select: none;
+}
+
+.advanced-section summary:hover {
+    text-decoration: underline;
+}
+
+.advanced-section[open] summary {
+    margin-bottom: 16px;
+}
+
+.danger-zone {
+    border: 1px solid #fecaca;
+    background: #fff7f7;
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 18px;
+}

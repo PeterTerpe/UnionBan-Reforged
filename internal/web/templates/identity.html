@@ -27,25 +27,41 @@
 </div>
 
 <div class="card">
-    <h2>Export Key Pair</h2>
-    <p class="warning-text">
-        The exported key pair contains the private key. Keep it secret.
-    </p>
+    <details class="advanced-section">
+        <summary>Advanced identity actions</summary>
 
-    <a class="button link-button" href="/ui/identity/export">Download Key Pair JSON</a>
-</div>
+        <p class="warning-text">
+            These actions are for backup, migration, or recovery only. Normal users should not need to use them.
+        </p>
 
-<div class="card">
-    <h2>Import Key Pair</h2>
-    <p class="warning-text">
-        Importing a key pair replaces the current local identity. Use this only for migration or backup recovery.
-    </p>
+        <div class="danger-zone">
+            <h2>Export Key Pair</h2>
+            <p class="warning-text">
+                The exported key pair contains sensitive identity material. Keep the downloaded file secret and never commit it to Git.
+            </p>
 
-    <form method="post" action="/ui/identity/import">
-        <label>Key Pair JSON</label>
-        <textarea class="large-textarea" name="keypair_json" placeholder="Paste exported key pair JSON here"></textarea>
+            <a class="button link-button"
+               href="/ui/identity/export"
+               onclick="return confirm('Export the key pair? You are putting all other trusting nodes at risk!')">
+                Download Key Pair JSON
+            </a>
+        </div>
 
-        <button class="danger-button" type="submit">Import and Replace Identity</button>
-    </form>
+        <div class="danger-zone">
+            <h2>Import Key Pair</h2>
+            <p class="warning-text">
+                Importing a key pair replaces the current local identity. Use this only for migration or backup recovery.
+            </p>
+
+            <form method="post"
+                  action="/ui/identity/import"
+                  onsubmit="return confirm('Import this key pair? This will replace the current local identity.')">
+                <label>Key Pair JSON</label>
+                <textarea class="large-textarea" name="keypair_json" placeholder="Paste exported key pair JSON here"></textarea>
+
+                <button class="danger-button" type="submit">Import and Replace Identity</button>
+            </form>
+        </div>
+    </details>
 </div>
 {{end}}
