@@ -8,15 +8,25 @@
     <link rel="stylesheet" href="/ui/static/style.css">
 </head>
 <body>
-<header>
-    <h1>MeshBan WebUI</h1>
-    <div>Version: {{.Version}}</div>
+<header class="top-panel">
+    <div class="top-panel-inner">
+        <a class="brand-link" href="/ui">MeshBan</a>
+        <span class="version-label">v{{.Version}}</span>
 
-    {{if ne .Title "Login"}}
-        <form method="post" action="/ui/logout" class="logout-form">
-            <button class="secondary-button" type="submit">Logout</button>
-        </form>
-    {{end}}
+        {{if ne .Title "Login"}}
+            <nav class="top-nav" aria-label="Main navigation">
+                <a href="/ui" {{if eq .Title "Dashboard"}}class="active"{{end}}>Dashboard</a>
+                <a href="/ui/database" {{if eq .Title "Database"}}class="active"{{end}}>Database</a>
+                <a href="/ui/identity" {{if eq .Title "Identity"}}class="active"{{end}}>Identity</a>
+                <a href="/ui/settings/security" {{if eq .Title "Security Settings"}}class="active"{{end}}>Security</a>
+                <a href="/ui/logs" {{if eq .Title "Logs"}}class="active"{{end}}>Logs</a>
+            </nav>
+
+            <form method="post" action="/ui/logout" class="logout-form">
+                <button class="secondary-button" type="submit">Logout</button>
+            </form>
+        {{end}}
+    </div>
 </header>
 
 <main>

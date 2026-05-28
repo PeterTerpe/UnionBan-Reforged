@@ -5,10 +5,57 @@ body {
     color: #1f2937;
 }
 
-header {
+.top-panel {
     background: #111827;
     color: white;
-    padding: 18px 32px;
+    padding: 8px 20px;
+}
+
+.top-panel-inner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 1180px;
+    margin: 0 auto;
+}
+
+.brand-link {
+    color: white;
+    font-size: 1rem;
+    font-weight: 800;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.version-label {
+    color: #9ca3af;
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+
+.top-nav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.top-nav a {
+    color: #d1d5db;
+    border-radius: 7px;
+    padding: 7px 9px;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.top-nav a:hover,
+.top-nav a.active {
+    background: #1f2937;
+    color: white;
 }
 
 main {
@@ -211,7 +258,7 @@ hr {
 }
 
 .logout-form {
-    margin-top: 10px;
+    margin: 0;
 }
 
 .secondary-button {
@@ -222,10 +269,17 @@ hr {
     color: white;
     cursor: pointer;
     font-weight: 600;
+    white-space: nowrap;
 }
 
 .secondary-button:hover {
     background: #1f2937;
+}
+
+.top-panel .secondary-button {
+    border-radius: 7px;
+    padding: 7px 10px;
+    font-size: 0.9rem;
 }
 
 .token-input {
@@ -267,4 +321,25 @@ hr {
     line-height: 1.55;
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+@media (max-width: 720px) {
+    .top-panel {
+        padding: 8px 12px;
+    }
+
+    .top-panel-inner {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .top-nav {
+        order: 3;
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .logout-form {
+        margin-left: auto;
+    }
 }
