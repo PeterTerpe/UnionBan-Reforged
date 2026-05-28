@@ -63,7 +63,7 @@ func main() {
 	}
 
 	// Ensure the WebUI token exists.
-	if _, err := secretStore.EnsureRandom(secrets.WebTokenEnv, 32); err != nil {
+	if _, err := secretStore.EnsureRandom(secrets.WebTokenEnv, 16); err != nil {
 		logger.Error("failed to initialize WebUI token", "error", err)
 		os.Exit(1)
 	}

@@ -36,11 +36,54 @@
     <h2>WebUI Token</h2>
 
     <p>Token configured: <strong>{{.HasWebToken}}</strong></p>
-    <p>Current token preview: <code>{{.WebTokenPreview}}</code></p>
+
+    {{if .WebToken}}
+        <label>Current WebUI Token</label>
+
+        <div class="token-row">
+            <input id="web-token-field"
+                class="input token-input"
+                type="text"
+                readonly
+                value="••••••••••••••••"
+                data-token="{{.WebToken}}"
+                data-hidden-value="••••••••••••••••"
+                onclick="this.select()">
+
+            <button id="web-token-toggle"
+                    class="secondary-button"
+                    type="button"
+                    onclick="toggleWebTokenVisibility()">
+                Show
+            </button>
+        </div>
+
+        <p class="warning-text">
+            Click Show to view token.
+        </p>
+    {{else}}
+        <p class="result-error">No WebUI token is configured.</p>
+    {{end}}
+
+    <form method="post"
+          action="/ui/settings/security/token/update"
+          onsubmit="return confirm('Change the WebUI token? Existing remote sessions and old remote access links may stop working.')">
+        <label>Set New WebUI Token</label>
+        <input class="input token-input"
+               name="web_token"
+               placeholder="Enter a new WebUI token"
+               minlength="2"
+               maxlength="128"
+               autocomplete="new-password">
+
+        <button class="button" type="submit">Save WebUI Token</button>
+    </form>
+
+    <hr>
 
     <form method="post"
           action="/ui/settings/security/token/regenerate"
-          onsubmit="return confirm('Regenerate the WebUI token? Existing remote access links using the old token will stop working.')">
+          onsubmit="return confirm('Regenerate the WebUI token? Existing remote sessions and old remote access links will stop working.')">
         <button class="danger-button" type="submit">Regenerate WebUI Token</button>
     </form>
 </div>
@@ -53,7 +96,7 @@
 
     <form method="post"
           action="/ui/settings/security/passphrase"
-          onsubmit="return confirm('Change the private key passphrase? It will be stored in .env')">
+          onsubmit="return confirm('Change the private key passphrase? Make sure you remember or back up the new passphrase.')">
         <label>New Passphrase</label>
         <input class="input" name="new_passphrase" type="password" placeholder="New private key passphrase">
 
@@ -74,6 +117,34 @@
                 <button class="danger-button" type="submit">Disable Private Key Encryption</button>
             </form>
         </div>
+    {{else}}
+        <p class="warning-text">
+            No key passphrase is currently configured, so there is no passphrase removal action to show.
+        </p>
     {{end}}
 </div>
+<script>
+function toggleWebTokenVisibility() {
+    const tokenField = document.getElementById("web-token-field");
+    const button = document.getElementById("web-token-toggle");
+
+    if (!tokenField || !button) {
+        return;
+    }
+
+    const hiddenValue = tokenField.dataset.hiddenValue || "••••••••••••••••";
+    const realToken = tokenField.dataset.token || "";
+
+    if (tokenField.dataset.visible === "true") {
+        tokenField.value = hiddenValue;
+        tokenField.dataset.visible = "false";
+        button.textContent = "Show";
+    } else {
+        tokenField.value = realToken;
+        tokenField.dataset.visible = "true";
+        button.textContent = "Hide";
+        tokenField.select();
+    }
+}
+</script>
 {{end}}

@@ -42,6 +42,7 @@ type Handler struct {
 	configPath      string
 	secretManager   *secrets.Manager
 	logger          *slog.Logger
+	loginLimiter    *auth.LoginLimiter
 }
 
 type PageData struct {
@@ -58,8 +59,9 @@ type PageData struct {
 	Config           *config.Config
 	HasKeyPassphrase bool
 	HasWebToken      bool
-	WebTokenPreview  string
+	WebToken         string
 	LoginNext        string
+	LoginRetryAfter  string
 }
 
 func RegisterRoutes(mux *http.ServeMux, options Options) {
@@ -71,6 +73,7 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 		configPath:      options.ConfigPath,
 		secretManager:   options.SecretManager,
 		logger:          options.Logger,
+		loginLimiter:    auth.NewLoginLimiter(5, 10*time.Minute, 15*time.Minute),
 	}
 
 	// Serve embedded static files.
@@ -104,6 +107,7 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 	mux.HandleFunc("/ui/settings/security/passphrase", handler.handleUpdatePassphrase)
 	mux.HandleFunc("/ui/settings/security/disable-encryption", handler.handleDisablePrivateKeyEncryption)
 	mux.HandleFunc("/ui/settings/security/token/regenerate", handler.handleRegenerateWebToken)
+	mux.HandleFunc("/ui/settings/security/token/update", handler.handleUpdateWebToken)
 }
 
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -473,7 +477,7 @@ func (h *Handler) handleSecuritySettingsPage(w http.ResponseWriter, r *http.Requ
 		Config:           h.config,
 		HasKeyPassphrase: strings.TrimSpace(h.secretManager.Get(secrets.KeyPassphraseEnv)) != "",
 		HasWebToken:      strings.TrimSpace(webToken) != "",
-		WebTokenPreview:  previewSecret(webToken),
+		WebToken:         webToken,
 		Message:          r.URL.Query().Get("message"),
 		ErrorMessage:     r.URL.Query().Get("error"),
 	})
@@ -594,10 +598,14 @@ func (h *Handler) handleRegenerateWebToken(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if _, err := h.secretManager.RegenerateRandom(secrets.WebTokenEnv, 32); err != nil {
+	newToken, err := h.secretManager.RegenerateRandom(secrets.WebTokenEnv, 16)
+	if err != nil {
 		redirectWithError(w, r, "/ui/settings/security", err.Error())
 		return
 	}
+
+	// Keep the current browser logged in after the token changes.
+	auth.SetSessionCookie(w, r, newToken)
 
 	redirectWithMessage(w, r, "/ui/settings/security", "WebUI token regenerated")
 }
@@ -650,6 +658,13 @@ func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		return
 
 	case http.MethodPost:
+		if retryAfter, locked := h.loginLimiter.IsLocked(r); locked {
+			next := safeLoginRedirect(r.FormValue("next"))
+			message := "too many failed login attempts; try again in " + retryAfter.Round(time.Second).String()
+			http.Redirect(w, r, "/ui/login?next="+url.QueryEscape(next)+"&error="+url.QueryEscape(message), http.StatusSeeOther)
+			return
+		}
+
 		if err := r.ParseForm(); err != nil {
 			redirectWithError(w, r, "/ui/login", "invalid form")
 			return
@@ -662,11 +677,19 @@ func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !auth.TokenMatches(providedToken, expectedToken) {
+			retryAfter, locked := h.loginLimiter.RecordFailure(r)
+
 			next := safeLoginRedirect(r.FormValue("next"))
-			http.Redirect(w, r, "/ui/login?next="+url.QueryEscape(next)+"&error="+url.QueryEscape("invalid token"), http.StatusSeeOther)
+			message := "invalid token"
+			if locked {
+				message = "too many failed login attempts; try again in " + retryAfter.Round(time.Second).String()
+			}
+
+			http.Redirect(w, r, "/ui/login?next="+url.QueryEscape(next)+"&error="+url.QueryEscape(message), http.StatusSeeOther)
 			return
 		}
 
+		h.loginLimiter.Reset(r)
 		auth.SetSessionCookie(w, r, expectedToken)
 
 		http.Redirect(w, r, safeLoginRedirect(r.FormValue("next")), http.StatusSeeOther)
@@ -704,4 +727,47 @@ func safeLoginRedirect(value string) string {
 	}
 
 	return value
+}
+
+func (h *Handler) handleUpdateWebToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", "invalid form")
+		return
+	}
+
+	newToken := strings.TrimSpace(r.FormValue("web_token"))
+	if newToken == "" {
+		redirectWithError(w, r, "/ui/settings/security", "new WebUI token is required")
+		return
+	}
+
+	if len(newToken) < 2 {
+		redirectWithError(w, r, "/ui/settings/security", "WebUI token must be at least 2 characters")
+		return
+	}
+
+	if len(newToken) > 128 {
+		redirectWithError(w, r, "/ui/settings/security", "WebUI token must be at most 128 characters")
+		return
+	}
+
+	if strings.ContainsAny(newToken, "\r\n\t ") {
+		redirectWithError(w, r, "/ui/settings/security", "WebUI token must not contain whitespace")
+		return
+	}
+
+	if err := h.secretManager.Set(secrets.WebTokenEnv, newToken); err != nil {
+		redirectWithError(w, r, "/ui/settings/security", err.Error())
+		return
+	}
+
+	// Keep the current browser logged in after the token changes.
+	auth.SetSessionCookie(w, r, newToken)
+
+	redirectWithMessage(w, r, "/ui/settings/security", "WebUI token updated")
 }

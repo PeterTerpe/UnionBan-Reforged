@@ -6,9 +6,11 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,6 +18,94 @@ const (
 	SessionCookieName = "meshban_web_session"
 	SessionTTL        = 12 * time.Hour
 )
+
+type LoginLimiter struct {
+	mu          sync.Mutex
+	failures    map[string]loginFailure
+	maxFailures int
+	window      time.Duration
+	lockout     time.Duration
+}
+
+type loginFailure struct {
+	Count       int
+	FirstFailed time.Time
+	LockedUntil time.Time
+}
+
+func NewLoginLimiter(maxFailures int, window time.Duration, lockout time.Duration) *LoginLimiter {
+	return &LoginLimiter{
+		failures:    make(map[string]loginFailure),
+		maxFailures: maxFailures,
+		window:      window,
+		lockout:     lockout,
+	}
+}
+
+func (l *LoginLimiter) IsLocked(r *http.Request) (time.Duration, bool) {
+	key := clientKey(r)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	record, ok := l.failures[key]
+	if !ok {
+		return 0, false
+	}
+
+	now := time.Now()
+
+	if !record.LockedUntil.IsZero() && now.Before(record.LockedUntil) {
+		return time.Until(record.LockedUntil), true
+	}
+
+	if !record.LockedUntil.IsZero() && now.After(record.LockedUntil) {
+		delete(l.failures, key)
+		return 0, false
+	}
+
+	return 0, false
+}
+
+func (l *LoginLimiter) RecordFailure(r *http.Request) (time.Duration, bool) {
+	key := clientKey(r)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	record := l.failures[key]
+
+	if record.FirstFailed.IsZero() || now.Sub(record.FirstFailed) > l.window {
+		record = loginFailure{
+			Count:       1,
+			FirstFailed: now,
+		}
+	} else {
+		record.Count++
+	}
+
+	if record.Count >= l.maxFailures {
+		record.LockedUntil = now.Add(l.lockout)
+	}
+
+	l.failures[key] = record
+
+	if !record.LockedUntil.IsZero() && now.Before(record.LockedUntil) {
+		return time.Until(record.LockedUntil), true
+	}
+
+	return 0, false
+}
+
+func (l *LoginLimiter) Reset(r *http.Request) {
+	key := clientKey(r)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	delete(l.failures, key)
+}
 
 func RequestHasValidToken(r *http.Request, expectedToken string) bool {
 	provided := ""
@@ -115,4 +205,13 @@ func signSessionValue(expiresAtText string, token string) string {
 	mac.Write([]byte(expiresAtText))
 
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func clientKey(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return strings.TrimSpace(r.RemoteAddr)
+	}
+
+	return strings.TrimSpace(host)
 }
