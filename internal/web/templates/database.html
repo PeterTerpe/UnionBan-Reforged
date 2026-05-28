@@ -20,8 +20,14 @@
         <label>Player UUID</label>
         <input class="input" name="player_uuid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
 
+        <label>Player Name</label>
+        <input class="input" name="player_name" placeholder="Notch">
+
         <label>Reason</label>
         <input class="input" name="reason" placeholder="cheating">
+
+        <label>UUID Source</label>
+        <input class="input" name="uuid_source" value="manual">
 
         <p class="warning-text">
             Source node ID and signature will be generated automatically by the local identity.
@@ -41,7 +47,9 @@
                     <tr>
                         <th>ID</th>
                         <th>Player UUID</th>
+                        <th>Player Name</th>
                         <th>Reason</th>
+                        <th>UUID Source</th>
                         <th>Source Node ID</th>
                         <th>Signature</th>
                         <th>Created At</th>
@@ -62,7 +70,15 @@
                             </td>
 
                             <td>
+                                <input form="update-ban-{{.ID}}" class="table-input" name="player_name" value="{{.PlayerName}}">
+                            </td>
+
+                            <td>
                                 <input form="update-ban-{{.ID}}" class="table-input" name="reason" value="{{.Reason}}">
+                            </td>
+
+                            <td>
+                                <input form="update-ban-{{.ID}}" class="table-input" name="uuid_source" value="{{.UUIDSource}}">
                             </td>
 
                             <td>

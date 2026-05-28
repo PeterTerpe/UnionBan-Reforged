@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"errors"
 	"html/template"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ import (
 	peerdebug "github.com/PeterTerpe/MeshBan/internal/debug/peer"
 	"github.com/PeterTerpe/MeshBan/internal/identity"
 	"github.com/PeterTerpe/MeshBan/internal/logs"
+	"github.com/PeterTerpe/MeshBan/internal/minecraft"
 	"github.com/PeterTerpe/MeshBan/internal/secrets"
 )
 
@@ -34,6 +37,7 @@ type Options struct {
 	SecretManager   *secrets.Manager
 	Logger          *slog.Logger
 	LogBuffer       *logs.Buffer
+	Minecraft       *minecraft.Service
 }
 
 type Handler struct {
@@ -45,27 +49,78 @@ type Handler struct {
 	secretManager   *secrets.Manager
 	logger          *slog.Logger
 	logBuffer       *logs.Buffer
+	minecraft       *minecraft.Service
 	loginLimiter    *auth.LoginLimiter
 }
 
+type MinecraftPolicyFormData struct {
+	KickMessage    string
+	KickReason     string
+	SupportContact string
+	Ultimate       int
+	Trusted        int
+	Friend         int
+	Unknown        int
+	Untrusted      int
+}
+
+type MinecraftUUIDResolverFormData struct {
+	Enabled           bool
+	Endpoint          string
+	ResponseUUIDField string
+	TimeoutSeconds    int
+	RetryCount        int
+	ProxyType         string
+	ProxyURL          string
+	ProxyURLEnv       string
+	ProxyAuth         bool
+	ProxyUsernameEnv  string
+	ProxyPassEnv      string
+}
+
+type MinecraftInstanceFormData struct {
+	Index              int
+	ID                 string
+	Enabled            bool
+	Mode               string
+	RCONHost           string
+	RCONPort           int
+	RCONPasswordEnv    string
+	RCONPollInterval   int
+	RCONCommandTimeout int
+	LogPath            string
+	LogPollInterval    int
+	LogReadFromEnd     bool
+	BannedPlayersPath  string
+	HasRCONPassword    bool
+	Policy             MinecraftPolicyFormData
+	UUIDResolver       MinecraftUUIDResolverFormData
+	Status             *minecraft.ConnectorStatus
+	LogLines           []string
+}
+
 type PageData struct {
-	Title            string
-	Version          string
-	DatabaseResult   *database.DebugInfo
-	PeerResult       *peerdebug.Result
-	PeerAddress      string
-	BanEntries       []database.BanEntry
-	Message          string
-	ErrorMessage     string
-	LocalIdentity    *identity.Identity
-	ExportedKeyPair  string
-	Config           *config.Config
-	HasKeyPassphrase bool
-	HasWebToken      bool
-	WebToken         string
-	LoginNext        string
-	LoginRetryAfter  string
-	LogLines         []string
+	Title              string
+	Version            string
+	DatabaseResult     *database.DebugInfo
+	PeerResult         *peerdebug.Result
+	PeerAddress        string
+	BanEntries         []database.BanEntry
+	Message            string
+	ErrorMessage       string
+	LocalIdentity      *identity.Identity
+	ExportedKeyPair    string
+	Config             *config.Config
+	HasKeyPassphrase   bool
+	HasWebToken        bool
+	WebToken           string
+	LoginNext          string
+	LoginRetryAfter    string
+	LogLines           []string
+	MinecraftStatus    []minecraft.ConnectorStatus
+	MinecraftPolicy    MinecraftPolicyFormData
+	MinecraftResolver  MinecraftUUIDResolverFormData
+	MinecraftInstances []MinecraftInstanceFormData
 }
 
 func RegisterRoutes(mux *http.ServeMux, options Options) {
@@ -78,6 +133,7 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 		secretManager:   options.SecretManager,
 		logger:          options.Logger,
 		logBuffer:       options.LogBuffer,
+		minecraft:       options.Minecraft,
 		loginLimiter:    auth.NewLoginLimiter(5, 10*time.Minute, 15*time.Minute),
 	}
 
@@ -115,6 +171,10 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 	mux.HandleFunc("/ui/settings/security/token/update", handler.handleUpdateWebToken)
 
 	mux.HandleFunc("/ui/logs", handler.handleLogsPage)
+	mux.HandleFunc("/ui/minecraft", handler.handleMinecraftPage)
+	mux.HandleFunc("/ui/minecraft/save", handler.handleSaveMinecraftSettings)
+	mux.HandleFunc("/ui/minecraft/add", handler.handleAddMinecraftInstance)
+	mux.HandleFunc("/ui/minecraft/delete", handler.handleDeleteMinecraftInstance)
 }
 
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -211,9 +271,485 @@ func (h *Handler) handleLogsPage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) handleMinecraftPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	h.renderMinecraftPage(w, PageData{
+		Title:        "Minecraft",
+		Version:      h.version,
+		Message:      r.URL.Query().Get("message"),
+		ErrorMessage: r.URL.Query().Get("error"),
+	})
+}
+
+func (h *Handler) handleSaveMinecraftSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		redirectWithError(w, r, "/ui/minecraft", "invalid form")
+		return
+	}
+
+	minecraftConfig, err := h.parseMinecraftConfigForm(r)
+	if err != nil {
+		redirectWithError(w, r, "/ui/minecraft", err.Error())
+		return
+	}
+
+	h.config.Minecraft = minecraftConfig
+	config.ApplyDefaults(h.config)
+
+	if err := config.Save(h.configPath, h.config); err != nil {
+		redirectWithError(w, r, "/ui/minecraft", err.Error())
+		return
+	}
+
+	if h.minecraft != nil {
+		h.minecraft.ApplyConfig(h.config.Minecraft)
+	}
+
+	redirectWithMessage(w, r, "/ui/minecraft", "Minecraft settings updated")
+}
+
+func (h *Handler) handleAddMinecraftInstance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	nextID := nextMinecraftInstanceID(h.config.Minecraft.Instances)
+	h.config.Minecraft.Instances = append(h.config.Minecraft.Instances, config.MinecraftInstanceConfig{
+		ID:      nextID,
+		Enabled: false,
+		Mode:    "rcon",
+		RCON: config.MinecraftRCONConfig{
+			Host:                  "127.0.0.1",
+			Port:                  25575,
+			PasswordEnv:           strings.ToUpper(strings.ReplaceAll(nextID, "-", "_")) + "_RCON_PASS",
+			PollIntervalSeconds:   60,
+			CommandTimeoutSeconds: 3,
+		},
+		Log: config.MinecraftLogConfig{
+			PollIntervalSeconds: 1,
+			ReadFromEndOnStart:  boolPtr(true),
+		},
+	})
+
+	config.ApplyDefaults(h.config)
+
+	if err := config.Save(h.configPath, h.config); err != nil {
+		redirectWithError(w, r, "/ui/minecraft", err.Error())
+		return
+	}
+
+	if h.minecraft != nil {
+		h.minecraft.ApplyConfig(h.config.Minecraft)
+	}
+
+	redirectWithMessage(w, r, "/ui/minecraft", "Minecraft connector added")
+}
+
+func (h *Handler) handleDeleteMinecraftInstance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		redirectWithError(w, r, "/ui/minecraft", "invalid form")
+		return
+	}
+
+	index, err := strconv.Atoi(strings.TrimSpace(r.FormValue("index")))
+	if err != nil || index < 0 || index >= len(h.config.Minecraft.Instances) {
+		redirectWithError(w, r, "/ui/minecraft", "invalid connector index")
+		return
+	}
+
+	h.config.Minecraft.Instances = append(h.config.Minecraft.Instances[:index], h.config.Minecraft.Instances[index+1:]...)
+	config.ApplyDefaults(h.config)
+
+	if err := config.Save(h.configPath, h.config); err != nil {
+		redirectWithError(w, r, "/ui/minecraft", err.Error())
+		return
+	}
+
+	if h.minecraft != nil {
+		h.minecraft.ApplyConfig(h.config.Minecraft)
+	}
+
+	redirectWithMessage(w, r, "/ui/minecraft", "Minecraft connector deleted")
+}
+
+func (h *Handler) renderMinecraftPage(w http.ResponseWriter, data PageData) {
+	data.Config = h.config
+	data.MinecraftStatus = h.minecraftStatuses()
+	data.MinecraftPolicy = minecraftPolicyFormData(h.config.Minecraft.DefaultPolicy)
+	data.MinecraftResolver = minecraftResolverFormData(h.config.Minecraft.UUIDResolver)
+	data.MinecraftInstances = h.minecraftInstanceFormData(data.MinecraftStatus)
+
+	h.renderPage(w, "minecraft.html", data)
+}
+
+func (h *Handler) minecraftStatuses() []minecraft.ConnectorStatus {
+	if h.minecraft == nil {
+		return nil
+	}
+
+	statuses := h.minecraft.Statuses()
+	sort.Slice(statuses, func(i int, j int) bool {
+		return statuses[i].ID < statuses[j].ID
+	})
+
+	return statuses
+}
+
+func (h *Handler) minecraftInstanceFormData(statuses []minecraft.ConnectorStatus) []MinecraftInstanceFormData {
+	statusByID := make(map[string]minecraft.ConnectorStatus, len(statuses))
+	for _, status := range statuses {
+		statusByID[status.ID] = status
+	}
+
+	logLines := []string{}
+	if h.logBuffer != nil {
+		logLines = h.logBuffer.Lines()
+	}
+
+	instances := make([]MinecraftInstanceFormData, 0, len(h.config.Minecraft.Instances))
+	for i, instance := range h.config.Minecraft.Instances {
+		instanceID := minecraftInstanceID(instance)
+
+		status, hasStatus := statusByID[instanceID]
+		var statusPtr *minecraft.ConnectorStatus
+		if hasStatus {
+			statusCopy := status
+			statusPtr = &statusCopy
+		}
+
+		hasPassword := false
+		if h.secretManager != nil && strings.TrimSpace(instance.RCON.PasswordEnv) != "" {
+			hasPassword = strings.TrimSpace(h.secretManager.Get(instance.RCON.PasswordEnv)) != ""
+		}
+
+		instances = append(instances, MinecraftInstanceFormData{
+			Index:              i,
+			ID:                 instance.ID,
+			Enabled:            instance.Enabled,
+			Mode:               firstNonEmpty(instance.Mode, "rcon"),
+			RCONHost:           firstNonEmpty(instance.RCON.Host, "127.0.0.1"),
+			RCONPort:           intOrDefault(instance.RCON.Port, 25575),
+			RCONPasswordEnv:    instance.RCON.PasswordEnv,
+			RCONPollInterval:   intOrDefault(instance.RCON.PollIntervalSeconds, 60),
+			RCONCommandTimeout: intOrDefault(instance.RCON.CommandTimeoutSeconds, 3),
+			LogPath:            instance.Log.Path,
+			LogPollInterval:    intOrDefault(instance.Log.PollIntervalSeconds, 1),
+			LogReadFromEnd:     boolPtrValue(instance.Log.ReadFromEndOnStart, true),
+			BannedPlayersPath:  instance.BannedPlayersPath,
+			HasRCONPassword:    hasPassword,
+			Policy:             minecraftPolicyFormData(instance.Policy),
+			UUIDResolver:       minecraftResolverFormData(instance.UUIDResolver),
+			Status:             statusPtr,
+			LogLines:           minecraftLogLinesForInstance(logLines, instanceID),
+		})
+	}
+
+	return instances
+}
+
+func (h *Handler) parseMinecraftConfigForm(r *http.Request) (config.MinecraftConfig, error) {
+	instanceCount, err := strconv.Atoi(strings.TrimSpace(r.FormValue("instance_count")))
+	if err != nil || instanceCount < 0 {
+		return config.MinecraftConfig{}, errors.New("invalid connector count")
+	}
+
+	cfg := config.MinecraftConfig{
+		Enabled:       r.FormValue("minecraft_enabled") == "on",
+		DefaultPolicy: parseMinecraftPolicyForm(r, "default"),
+		UUIDResolver:  parseMinecraftResolverForm(r, "default"),
+		Instances:     make([]config.MinecraftInstanceConfig, 0, instanceCount),
+	}
+
+	seenIDs := make(map[string]bool, instanceCount)
+	for i := 0; i < instanceCount; i++ {
+		prefix := "instance_" + strconv.Itoa(i)
+		var existing config.MinecraftInstanceConfig
+		if i < len(h.config.Minecraft.Instances) {
+			existing = h.config.Minecraft.Instances[i]
+		}
+
+		id := strings.TrimSpace(r.FormValue(prefix + "_id"))
+		if id == "" {
+			return config.MinecraftConfig{}, errors.New("connector id is required")
+		}
+		if seenIDs[id] {
+			return config.MinecraftConfig{}, errors.New("connector id must be unique")
+		}
+		seenIDs[id] = true
+
+		port, err := parsePositiveIntForm(r, prefix+"_rcon_port", "RCON port")
+		if err != nil {
+			return config.MinecraftConfig{}, err
+		}
+		if port > 65535 {
+			return config.MinecraftConfig{}, errors.New("RCON port must be at most 65535")
+		}
+
+		pollInterval, err := parsePositiveIntForm(r, prefix+"_rcon_poll_interval", "Ban poll interval")
+		if err != nil {
+			return config.MinecraftConfig{}, err
+		}
+
+		commandTimeout, err := parsePositiveIntForm(r, prefix+"_rcon_command_timeout", "RCON command timeout")
+		if err != nil {
+			return config.MinecraftConfig{}, err
+		}
+
+		logPollInterval, err := parsePositiveIntForm(r, prefix+"_log_poll_interval", "Log scan interval")
+		if err != nil {
+			return config.MinecraftConfig{}, err
+		}
+
+		passwordEnv := strings.TrimSpace(r.FormValue(prefix + "_rcon_password_env"))
+		password := strings.TrimSpace(r.FormValue(prefix + "_rcon_password"))
+		if password != "" {
+			if passwordEnv == "" {
+				return config.MinecraftConfig{}, errors.New("RCON password env is required before setting a password")
+			}
+
+			if h.secretManager == nil {
+				return config.MinecraftConfig{}, errors.New("secret manager is unavailable")
+			}
+
+			if err := h.secretManager.Set(passwordEnv, password); err != nil {
+				return config.MinecraftConfig{}, err
+			}
+		}
+
+		mode := strings.TrimSpace(r.FormValue(prefix + "_mode"))
+		if mode == "" {
+			mode = "rcon"
+		}
+
+		cfg.Instances = append(cfg.Instances, config.MinecraftInstanceConfig{
+			ID:                id,
+			Enabled:           r.FormValue(prefix+"_enabled") == "on",
+			Mode:              mode,
+			BannedPlayersPath: strings.TrimSpace(r.FormValue(prefix + "_banned_players_path")),
+			RCON: config.MinecraftRCONConfig{
+				Host:                  strings.TrimSpace(r.FormValue(prefix + "_rcon_host")),
+				Port:                  port,
+				PasswordEnv:           passwordEnv,
+				PollIntervalSeconds:   pollInterval,
+				CommandTimeoutSeconds: commandTimeout,
+			},
+			Log: config.MinecraftLogConfig{
+				Path:                strings.TrimSpace(r.FormValue(prefix + "_log_path")),
+				PollIntervalSeconds: logPollInterval,
+				ReadFromEndOnStart:  boolPtr(r.FormValue(prefix+"_log_read_from_end") == "on"),
+			},
+			Policy:          parseMinecraftPolicyForm(r, prefix),
+			UUIDResolver:    existing.UUIDResolver,
+			PaperAdapter:    existing.PaperAdapter,
+			AdapterTokenEnv: existing.AdapterTokenEnv,
+		})
+	}
+
+	return cfg, nil
+}
+
+func parseMinecraftPolicyForm(r *http.Request, prefix string) config.MinecraftPolicyConfig {
+	return config.MinecraftPolicyConfig{
+		KickMessage:    strings.TrimSpace(r.FormValue(prefix + "_kick_message")),
+		KickReason:     strings.TrimSpace(r.FormValue(prefix + "_kick_reason")),
+		SupportContact: strings.TrimSpace(r.FormValue(prefix + "_support_contact")),
+		Ultimate:       intPtr(parseNonNegativeIntValue(r.FormValue(prefix + "_ultimate"))),
+		Trusted:        intPtr(parseNonNegativeIntValue(r.FormValue(prefix + "_trusted"))),
+		Friend:         intPtr(parseNonNegativeIntValue(r.FormValue(prefix + "_friend"))),
+		Unknown:        intPtr(parseNonNegativeIntValue(r.FormValue(prefix + "_unknown"))),
+		Untrusted:      intPtr(parseNonNegativeIntValue(r.FormValue(prefix + "_untrusted"))),
+	}
+}
+
+func parseMinecraftResolverForm(r *http.Request, prefix string) config.MinecraftUUIDResolverConfig {
+	return config.MinecraftUUIDResolverConfig{
+		Enabled:           r.FormValue(prefix+"_uuid_enabled") == "on",
+		Endpoint:          strings.TrimSpace(r.FormValue(prefix + "_uuid_endpoint")),
+		ResponseUUIDField: strings.TrimSpace(r.FormValue(prefix + "_uuid_response_field")),
+		TimeoutSeconds:    parseNonNegativeIntValue(r.FormValue(prefix + "_uuid_timeout")),
+		RetryCount:        parseNonNegativeIntValue(r.FormValue(prefix + "_uuid_retries")),
+		ProxyType:         strings.TrimSpace(r.FormValue(prefix + "_uuid_proxy_type")),
+		ProxyURL:          strings.TrimSpace(r.FormValue(prefix + "_uuid_proxy_url")),
+		ProxyURLEnv:       strings.TrimSpace(r.FormValue(prefix + "_uuid_proxy_url_env")),
+		ProxyAuth:         r.FormValue(prefix+"_uuid_proxy_auth") == "on",
+		ProxyUsernameEnv:  strings.TrimSpace(r.FormValue(prefix + "_uuid_proxy_username_env")),
+		ProxyPassEnv:      strings.TrimSpace(r.FormValue(prefix + "_uuid_proxy_pass_env")),
+	}
+}
+
+func minecraftPolicyFormData(policy config.MinecraftPolicyConfig) MinecraftPolicyFormData {
+	return MinecraftPolicyFormData{
+		KickMessage:    policy.KickMessage,
+		KickReason:     policy.KickReason,
+		SupportContact: policy.SupportContact,
+		Ultimate:       intPtrValue(policy.Ultimate, 1),
+		Trusted:        intPtrValue(policy.Trusted, 2),
+		Friend:         intPtrValue(policy.Friend, 5),
+		Unknown:        intPtrValue(policy.Unknown, 20),
+		Untrusted:      intPtrValue(policy.Untrusted, 0),
+	}
+}
+
+func minecraftResolverFormData(resolver config.MinecraftUUIDResolverConfig) MinecraftUUIDResolverFormData {
+	return MinecraftUUIDResolverFormData{
+		Enabled:           resolver.Enabled,
+		Endpoint:          resolver.Endpoint,
+		ResponseUUIDField: firstNonEmpty(resolver.ResponseUUIDField, "id"),
+		TimeoutSeconds:    intOrDefault(resolver.TimeoutSeconds, 5),
+		RetryCount:        resolver.RetryCount,
+		ProxyType:         firstNonEmpty(resolver.ProxyType, "none"),
+		ProxyURL:          resolver.ProxyURL,
+		ProxyURLEnv:       resolver.ProxyURLEnv,
+		ProxyAuth:         resolver.ProxyAuth,
+		ProxyUsernameEnv:  resolver.ProxyUsernameEnv,
+		ProxyPassEnv:      resolver.ProxyPassEnv,
+	}
+}
+
+func parsePositiveIntForm(r *http.Request, name string, label string) (int, error) {
+	value, err := strconv.Atoi(strings.TrimSpace(r.FormValue(name)))
+	if err != nil || value <= 0 {
+		return 0, errors.New(label + " must be a positive integer")
+	}
+
+	return value, nil
+}
+
+func parseNonNegativeIntValue(value string) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < 0 {
+		return 0
+	}
+
+	return parsed
+}
+
+func intPtr(value int) *int {
+	return &value
+}
+
+func boolPtr(value bool) *bool {
+	return &value
+}
+
+func intPtrValue(value *int, fallback int) int {
+	if value == nil {
+		return fallback
+	}
+
+	return *value
+}
+
+func boolPtrValue(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+
+	return *value
+}
+
+func intOrDefault(value int, fallback int) int {
+	if value == 0 {
+		return fallback
+	}
+
+	return value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+
+	return ""
+}
+
+func nextMinecraftInstanceID(instances []config.MinecraftInstanceConfig) string {
+	used := make(map[string]bool, len(instances))
+	for _, instance := range instances {
+		used[strings.TrimSpace(instance.ID)] = true
+	}
+
+	for i := 1; ; i++ {
+		id := "minecraft-" + strconv.Itoa(i)
+		if !used[id] {
+			return id
+		}
+	}
+}
+
+func minecraftInstanceID(instance config.MinecraftInstanceConfig) string {
+	if id := strings.TrimSpace(instance.ID); id != "" {
+		return id
+	}
+
+	host := firstNonEmpty(instance.RCON.Host, "127.0.0.1")
+	port := intOrDefault(instance.RCON.Port, 25575)
+
+	return host + ":" + strconv.Itoa(port)
+}
+
+func minecraftLogLinesForInstance(lines []string, instanceID string) []string {
+	instanceID = strings.TrimSpace(instanceID)
+	if instanceID == "" {
+		return nil
+	}
+
+	filtered := []string{}
+	for _, line := range lines {
+		if !minecraftLogLineMatchesInstance(line, instanceID) {
+			continue
+		}
+
+		filtered = append(filtered, line)
+		if len(filtered) > 120 {
+			filtered = filtered[1:]
+		}
+	}
+
+	return filtered
+}
+
+func minecraftLogLineMatchesInstance(line string, instanceID string) bool {
+	return strings.Contains(line, "instance="+instanceID) ||
+		strings.Contains(line, "instance="+strconv.Quote(instanceID))
+}
+
+func statusClass(state string) string {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "ok":
+		return "status-ok"
+	case "starting":
+		return "status-pending"
+	case "disabled", "stopped", "unsupported":
+		return "status-muted"
+	default:
+		return "status-error"
+	}
+}
+
 func (h *Handler) renderPage(w http.ResponseWriter, page string, data PageData) {
 	funcs := template.FuncMap{
-		"formatUnix": formatUnix,
+		"formatUnix":  formatUnix,
+		"statusClass": statusClass,
 	}
 
 	templates, err := template.New("").Funcs(funcs).ParseFS(
@@ -411,7 +947,9 @@ func parseBanEntryForm(r *http.Request) (database.BanEntry, error) {
 	return database.BanEntry{
 		ID:         id,
 		PlayerUUID: r.FormValue("player_uuid"),
+		PlayerName: r.FormValue("player_name"),
 		Reason:     r.FormValue("reason"),
+		UUIDSource: r.FormValue("uuid_source"),
 	}, nil
 }
 

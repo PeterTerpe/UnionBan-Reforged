@@ -17,6 +17,7 @@ import (
 	"github.com/PeterTerpe/MeshBan/internal/database"
 	"github.com/PeterTerpe/MeshBan/internal/identity"
 	"github.com/PeterTerpe/MeshBan/internal/logs"
+	"github.com/PeterTerpe/MeshBan/internal/minecraft"
 	"github.com/PeterTerpe/MeshBan/internal/secrets"
 )
 
@@ -127,6 +128,18 @@ func main() {
 	localIdentity := identityService.Current()
 	logger.Info("local identity loaded", "node_id", localIdentity.NodeID)
 
+	// Start Minecraft server monitoring in the background.
+	minecraftService := minecraft.NewService(minecraft.Options{
+		Config:          cfg.Minecraft,
+		Database:        db,
+		IdentityService: identityService,
+		SecretManager:   secretStore,
+		LocalNodeID:     localIdentity.NodeID,
+		Logger:          logger,
+	})
+
+	go minecraftService.Run(ctx)
+
 	// Create the local API and WebUI server.
 	apiServer := api.NewServer(api.Options{
 		ListenAddr:      cfg.WebUI.Listen,
@@ -138,6 +151,7 @@ func main() {
 		SecretManager:   secretStore,
 		Logger:          logger,
 		LogBuffer:       logBuffer,
+		Minecraft:       minecraftService,
 	})
 
 	// Start the local API server in the background.

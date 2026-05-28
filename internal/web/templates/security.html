@@ -96,7 +96,7 @@
 
     <form method="post"
           action="/ui/settings/security/passphrase"
-          onsubmit="return confirm('Change the private key passphrase? Make sure you remember or back up the new passphrase.')">
+          onsubmit="return confirm('Change the private key passphrase? The new passphrase will be stored in .env')">
         <label>New Passphrase</label>
         <input class="input" name="new_passphrase" type="password" placeholder="New private key passphrase">
 

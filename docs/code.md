@@ -5,6 +5,7 @@ The main programme that handles other components.
 
 - Initialise configuration and database
 - Create the WebUI server
+- Start enabled Minecraft monitors
 
 ## api
 The WebUI and API server, manage request authentication
@@ -31,6 +32,12 @@ Handle the banlist table
 - Validate entries before writing to database
   - require: player UUID, ban reason, source node ID
 
+### cache.go
+Handle player decision cache entries used by Minecraft join checks.
+
+- Cache allow/kick decisions per Minecraft instance and player UUID
+- Invalidate cached decisions when the local banlist version changes
+
 ### identity.go
 Handle node identities using [identity/service.go](#servicego)
 
@@ -39,6 +46,15 @@ Handle node identities using [identity/service.go](#servicego)
 
 ## debug/peer
 A debug tool to test peer connections during development, not fully implemented yet.
+
+## minecraft
+Monitor Minecraft servers through log tailing and RCON.
+
+- Tail the configured server log and check players when join events appear
+- Poll RCON `banlist players` and import resolvable server bans into the local banlist
+- Resolve player UUIDs from log UUID lines, RCON entity data, or the optional UUID resolver
+- Check cached allow/kick decisions before evaluating local banlist entries
+- Kick players who satisfy the configured policy
 
 ## identity
 Directly handle key pair
@@ -75,7 +91,7 @@ It allow users to:
   - Add/edit
 - Debug options
 - View logs
-- Manage Minecraft servers' connections (to be implemented)
+- Manage Minecraft server log/RCON connections and status
 - Manage peer connections: (to be implemented)
   - Manage peer list
   - Manage trust level

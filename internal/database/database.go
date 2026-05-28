@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -81,8 +82,10 @@ CREATE TABLE IF NOT EXISTS local_identity (
 CREATE TABLE IF NOT EXISTS banlist (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     player_uuid TEXT NOT NULL,
+    player_name TEXT NOT NULL DEFAULT '',
     reason TEXT NOT NULL,
     source_node_id TEXT NOT NULL,
+    uuid_source TEXT NOT NULL DEFAULT '',
     signature TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -93,9 +96,68 @@ ON banlist(player_uuid);
 
 CREATE INDEX IF NOT EXISTS idx_banlist_source_node_id
 ON banlist(source_node_id);
+
+CREATE TABLE IF NOT EXISTS player_decision_cache (
+    server_id TEXT NOT NULL,
+    player_uuid TEXT NOT NULL,
+    player_name TEXT NOT NULL DEFAULT '',
+    decision TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    policy_met TEXT NOT NULL DEFAULT '',
+    banlist_version TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (server_id, player_uuid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_player_decision_cache_updated_at
+ON player_decision_cache(updated_at);
 `
 
-	_, err := d.db.ExecContext(ctx, query)
+	if _, err := d.db.ExecContext(ctx, query); err != nil {
+		return err
+	}
+
+	if err := d.ensureColumn(ctx, "banlist", "player_name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+
+	if err := d.ensureColumn(ctx, "banlist", "uuid_source", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (d *Database) ensureColumn(ctx context.Context, table string, column string, definition string) error {
+	rows, err := d.db.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+
+		if name == column {
+			return nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = d.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition))
 	return err
 }
 
