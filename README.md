@@ -13,7 +13,7 @@
 - 在玩家加入服务器后，后台查询封禁信息，若匹配封禁规则便踢出服务器，不影响玩家连接速度。
 
 ## 你要参与这个项目？
-最新代码请见 [dev分支]([github.com/PeterTerpe/](https://github.com/PeterTerpe/MeshBan/tree/dev))
+最新代码请见 [dev分支](https://github.com/PeterTerpe/MeshBan/tree/dev)
 
 --- 本分支（暂无代码） ---
 
