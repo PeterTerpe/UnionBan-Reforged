@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -15,6 +16,7 @@ import (
 	"github.com/PeterTerpe/MeshBan/internal/config"
 	"github.com/PeterTerpe/MeshBan/internal/database"
 	"github.com/PeterTerpe/MeshBan/internal/identity"
+	"github.com/PeterTerpe/MeshBan/internal/logs"
 	"github.com/PeterTerpe/MeshBan/internal/secrets"
 )
 
@@ -39,7 +41,8 @@ func main() {
 	defer cancel()
 
 	// Initialize structured logging.
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	logBuffer := logs.NewBuffer(500)
+	logger := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, logBuffer), &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 	slog.SetDefault(logger)
@@ -134,6 +137,7 @@ func main() {
 		ConfigPath:      *configPath,
 		SecretManager:   secretStore,
 		Logger:          logger,
+		LogBuffer:       logBuffer,
 	})
 
 	// Start the local API server in the background.

@@ -1,0 +1,21 @@
+{{define "content"}}
+<div class="card">
+    <h2>Logs</h2>
+    <p><a href="/ui">Back to dashboard</a></p>
+
+    <div class="action-row">
+        <a class="button link-button" href="/ui/logs">Refresh</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Recent Log Entries</h2>
+
+    {{if .LogLines}}
+        <pre class="log-view">{{range .LogLines}}{{.}}
+{{end}}</pre>
+    {{else}}
+        <p>No log entries have been captured yet.</p>
+    {{end}}
+</div>
+{{end}}

@@ -244,3 +244,27 @@ hr {
     flex: 1;
     min-width: 260px;
 }
+
+.action-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.log-view {
+    box-sizing: border-box;
+    width: 100%;
+    max-height: 560px;
+    overflow: auto;
+    margin: 0;
+    padding: 14px;
+    border-radius: 10px;
+    background: #111827;
+    color: #f9fafb;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

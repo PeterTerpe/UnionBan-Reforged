@@ -74,7 +74,7 @@ It allow users to:
 - Manage local Banlist entries:
   - Add/edit
 - Debug options
-- View logs (to be implemented)
+- View logs
 - Manage Minecraft servers' connections (to be implemented)
 - Manage peer connections: (to be implemented)
   - Manage peer list

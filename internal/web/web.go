@@ -18,6 +18,7 @@ import (
 	"github.com/PeterTerpe/MeshBan/internal/database"
 	peerdebug "github.com/PeterTerpe/MeshBan/internal/debug/peer"
 	"github.com/PeterTerpe/MeshBan/internal/identity"
+	"github.com/PeterTerpe/MeshBan/internal/logs"
 	"github.com/PeterTerpe/MeshBan/internal/secrets"
 )
 
@@ -32,6 +33,7 @@ type Options struct {
 	ConfigPath      string
 	SecretManager   *secrets.Manager
 	Logger          *slog.Logger
+	LogBuffer       *logs.Buffer
 }
 
 type Handler struct {
@@ -42,6 +44,7 @@ type Handler struct {
 	configPath      string
 	secretManager   *secrets.Manager
 	logger          *slog.Logger
+	logBuffer       *logs.Buffer
 	loginLimiter    *auth.LoginLimiter
 }
 
@@ -62,6 +65,7 @@ type PageData struct {
 	WebToken         string
 	LoginNext        string
 	LoginRetryAfter  string
+	LogLines         []string
 }
 
 func RegisterRoutes(mux *http.ServeMux, options Options) {
@@ -73,6 +77,7 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 		configPath:      options.ConfigPath,
 		secretManager:   options.SecretManager,
 		logger:          options.Logger,
+		logBuffer:       options.LogBuffer,
 		loginLimiter:    auth.NewLoginLimiter(5, 10*time.Minute, 15*time.Minute),
 	}
 
@@ -108,6 +113,8 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 	mux.HandleFunc("/ui/settings/security/disable-encryption", handler.handleDisablePrivateKeyEncryption)
 	mux.HandleFunc("/ui/settings/security/token/regenerate", handler.handleRegenerateWebToken)
 	mux.HandleFunc("/ui/settings/security/token/update", handler.handleUpdateWebToken)
+
+	mux.HandleFunc("/ui/logs", handler.handleLogsPage)
 }
 
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -184,6 +191,24 @@ func (h *Handler) handlePeerDebug(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) renderDashboard(w http.ResponseWriter, data PageData) {
 	h.renderPage(w, "dashboard.html", data)
+}
+
+func (h *Handler) handleLogsPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	lines := []string{}
+	if h.logBuffer != nil {
+		lines = h.logBuffer.Lines()
+	}
+
+	h.renderPage(w, "logs.html", PageData{
+		Title:    "Logs",
+		Version:  h.version,
+		LogLines: lines,
+	})
 }
 
 func (h *Handler) renderPage(w http.ResponseWriter, page string, data PageData) {

@@ -14,6 +14,7 @@ import (
 	"github.com/PeterTerpe/MeshBan/internal/config"
 	"github.com/PeterTerpe/MeshBan/internal/database"
 	"github.com/PeterTerpe/MeshBan/internal/identity"
+	"github.com/PeterTerpe/MeshBan/internal/logs"
 	"github.com/PeterTerpe/MeshBan/internal/secrets"
 	"github.com/PeterTerpe/MeshBan/internal/web"
 )
@@ -35,6 +36,7 @@ type Options struct {
 	ConfigPath      string
 	SecretManager   *secrets.Manager
 	Logger          *slog.Logger
+	LogBuffer       *logs.Buffer
 }
 
 type StatusResponse struct {
@@ -72,6 +74,7 @@ func NewServer(options Options) *Server {
 		ConfigPath:      options.ConfigPath,
 		SecretManager:   options.SecretManager,
 		Logger:          options.Logger,
+		LogBuffer:       options.LogBuffer,
 	})
 
 	return s
