@@ -610,20 +610,6 @@ func (h *Handler) handleRegenerateWebToken(w http.ResponseWriter, r *http.Reques
 	redirectWithMessage(w, r, "/ui/settings/security", "WebUI token regenerated")
 }
 
-func previewSecret(value string) string {
-	value = strings.TrimSpace(value)
-
-	if value == "" {
-		return "-"
-	}
-
-	if len(value) <= 10 {
-		return value
-	}
-
-	return value[:6] + "..." + value[len(value)-4:]
-}
-
 func (h *Handler) handleCreateNewKeyPair(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
