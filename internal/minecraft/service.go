@@ -420,9 +420,10 @@ func (s *Service) handleJoinedPlayer(ctx context.Context, instanceID string, cli
 }
 
 func (s *Service) importServerBans(ctx context.Context, instanceID string, bannedPlayersPath string, client *RCONClient, resolver *UUIDResolver, policy resolvedPolicy, recentPlayers map[string]Player, knownServerBans map[string]bool, lastRCONError *string) {
-	response, err := client.Command(ctx, "banlist players")
 	now := time.Now().Unix()
-	if err != nil {
+
+	// Lightweight RCON health check — much cheaper than "banlist players".
+	if _, err := client.Command(ctx, "list"); err != nil {
 		*lastRCONError = "RCON connection failed: " + err.Error()
 		s.updateStatus(instanceID, func(status *ConnectorStatus) {
 			status.State = "error"
@@ -431,32 +432,44 @@ func (s *Service) importServerBans(ctx context.Context, instanceID string, banne
 			status.LastErrorUnix = now
 			status.LastError = err.Error()
 		})
-		s.logger.Warn("failed to query server ban list over RCON", "instance", instanceID, "error", err)
+		s.logger.Warn("RCON health check failed", "instance", instanceID, "error", err)
 		return
 	}
 
 	*lastRCONError = ""
 
+	// Read bans from banned-players.json — avoids performance impact on the
+	// Minecraft server compared to querying the full banlist over RCON.
 	bannedPlayers, err := loadBannedPlayersFile(bannedPlayersPath)
 	if err != nil {
 		s.logger.Warn("failed to read banned players JSON", "instance", instanceID, "path", bannedPlayersPath, "error", err)
+		// RCON is healthy even if the file is absent; report ok.
+		s.updateStatus(instanceID, func(status *ConnectorStatus) {
+			status.State = "ok"
+			status.Message = "monitor active"
+			status.LastPollUnix = now
+			status.LastSuccessUnix = now
+			status.LastError = ""
+		})
+		return
 	}
 
-	serverBans := parseBanListPlayers(response)
-	currentServerBans := make(map[string]bool, len(serverBans))
-	for _, serverBan := range serverBans {
-		key := strings.ToLower(serverBan.Name)
-		currentServerBans[key] = true
+	newBans := make(map[string]bool, len(bannedPlayers))
+	for key, serverBan := range bannedPlayers {
+		if serverBan.UUID == "" {
+			s.logger.Warn("skipping server ban with empty UUID", "instance", instanceID, "player", serverBan.Name)
+			continue
+		}
+
+		newBans[key] = true
 		if knownServerBans[key] {
 			continue
 		}
 
-		serverBan = mergeServerBan(serverBan, bannedPlayers[key])
-
-		player, ok := s.resolveServerBanPlayer(ctx, instanceID, client, resolver, serverBan, recentPlayers)
-		if !ok {
-			s.logger.Warn("skipping server ban import because UUID could not be resolved", "instance", instanceID, "player", serverBan.Name)
-			continue
+		player := Player{
+			Name:       serverBan.Name,
+			UUID:       serverBan.UUID,
+			UUIDSource: firstNonEmpty(serverBan.UUIDSource, "official"),
 		}
 
 		if err := s.importServerBan(ctx, instanceID, serverBan, player, policy); err != nil {
@@ -467,8 +480,9 @@ func (s *Service) importServerBans(ctx context.Context, instanceID string, banne
 		knownServerBans[key] = true
 	}
 
+	// Clean up stale entries for bans that were removed from the file.
 	for knownName := range knownServerBans {
-		if !currentServerBans[knownName] {
+		if !newBans[knownName] {
 			delete(knownServerBans, knownName)
 		}
 	}
@@ -480,64 +494,6 @@ func (s *Service) importServerBans(ctx context.Context, instanceID string, banne
 		status.LastSuccessUnix = now
 		status.LastError = ""
 	})
-}
-
-func (s *Service) resolveServerBanPlayer(ctx context.Context, instanceID string, client *RCONClient, resolver *UUIDResolver, serverBan ServerBan, recentPlayers map[string]Player) (Player, bool) {
-	key := strings.ToLower(serverBan.Name)
-	if strings.TrimSpace(serverBan.UUID) != "" {
-		return Player{
-			Name:       serverBan.Name,
-			UUID:       serverBan.UUID,
-			UUIDSource: firstNonEmpty(serverBan.UUIDSource, "official"),
-		}, true
-	}
-
-	if player, ok := recentPlayers[key]; ok && strings.TrimSpace(player.UUID) != "" {
-		return player, true
-	}
-
-	if uuid, ok := s.playerUUIDFromRCON(ctx, client, serverBan.Name); ok {
-		return Player{
-			Name:       serverBan.Name,
-			UUID:       uuid,
-			UUIDSource: "official",
-		}, true
-	}
-
-	if resolver != nil && resolver.config.Enabled {
-		result, err := resolver.ResolveWithSource(ctx, serverBan.Name)
-		if err == nil {
-			return Player{
-				Name:       serverBan.Name,
-				UUID:       result.UUID,
-				UUIDSource: result.Source,
-			}, true
-		}
-
-		s.logger.Warn("failed to resolve banned player UUID", "instance", instanceID, "player", serverBan.Name, "error", err)
-	}
-
-	return Player{}, false
-}
-
-func mergeServerBan(primary ServerBan, fallback ServerBan) ServerBan {
-	if strings.TrimSpace(primary.Name) == "" {
-		primary.Name = fallback.Name
-	}
-
-	if strings.TrimSpace(primary.UUID) == "" {
-		primary.UUID = fallback.UUID
-	}
-
-	if strings.TrimSpace(primary.Reason) == "" {
-		primary.Reason = fallback.Reason
-	}
-
-	if strings.TrimSpace(primary.UUIDSource) == "" {
-		primary.UUIDSource = fallback.UUIDSource
-	}
-
-	return primary
 }
 
 func (s *Service) importServerBan(ctx context.Context, instanceID string, serverBan ServerBan, player Player, policy resolvedPolicy) error {

@@ -110,7 +110,16 @@ func parseServerBanPart(value string) (ServerBan, bool) {
 	name := value
 	reason := ""
 
-	if left, right, ok := strings.Cut(value, ":"); ok {
+	// Handle vanilla format (1.20+): "PlayerName was banned by Source: Reason"
+	if idx := strings.Index(value, " was banned by "); idx >= 0 {
+		name = strings.TrimSpace(value[:idx])
+		if rest := value[idx+len(" was banned by "):]; rest != "" {
+			// The rest is "Source: Reason"; extract reason after the first colon.
+			if _, r, ok := strings.Cut(rest, ":"); ok {
+				reason = strings.TrimSpace(r)
+			}
+		}
+	} else if left, right, ok := strings.Cut(value, ":"); ok {
 		name = strings.TrimSpace(left)
 		reason = strings.TrimSpace(right)
 	} else if strings.HasSuffix(value, ")") {

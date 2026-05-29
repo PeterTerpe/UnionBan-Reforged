@@ -53,6 +53,58 @@ func TestParseBanListPlayers(t *testing.T) {
 	}
 }
 
+func TestParseBanListPlayersVanillaFormat(t *testing.T) {
+	bans := parseBanListPlayers("There are 2 bans: Notch was banned by Server: griefing, jeb_ was banned by Console: hacking")
+
+	if len(bans) != 2 {
+		t.Fatalf("bans length = %d, want 2", len(bans))
+	}
+
+	if bans[0].Name != "Notch" || bans[0].Reason != "griefing" {
+		t.Fatalf("first ban = %#v, want Notch with reason griefing", bans[0])
+	}
+
+	if bans[1].Name != "jeb_" || bans[1].Reason != "hacking" {
+		t.Fatalf("second ban = %#v, want jeb_ with reason hacking", bans[1])
+	}
+}
+
+func TestParseBanListPlayersMixedFormat(t *testing.T) {
+	bans := parseBanListPlayers("There are 3 bans: Notch was banned by Server: griefing, jeb_: hacking, Dinnerbone")
+
+	if len(bans) != 3 {
+		t.Fatalf("bans length = %d, want 3", len(bans))
+	}
+
+	if bans[0].Name != "Notch" || bans[0].Reason != "griefing" {
+		t.Fatalf("first ban = %#v, want Notch with reason griefing", bans[0])
+	}
+
+	if bans[1].Name != "jeb_" || bans[1].Reason != "hacking" {
+		t.Fatalf("second ban = %#v, want jeb_ with reason hacking", bans[1])
+	}
+
+	if bans[2].Name != "Dinnerbone" || bans[2].Reason != "" {
+		t.Fatalf("third ban = %#v, want Dinnerbone with no reason", bans[2])
+	}
+}
+
+func TestParseBanListPlayersEmpty(t *testing.T) {
+	bans := parseBanListPlayers("There are 0 bans:")
+
+	if len(bans) != 0 {
+		t.Fatalf("bans length = %d, want 0", len(bans))
+	}
+}
+
+func TestParseBanListPlayersMalformed(t *testing.T) {
+	bans := parseBanListPlayers("unknown format")
+
+	if len(bans) != 0 {
+		t.Fatalf("bans length = %d, want 0", len(bans))
+	}
+}
+
 func TestParseLogUUID(t *testing.T) {
 	player, ok := parseLogUUID("[12:00:00 INFO]: UUID of player Notch is 069a79f444e94726a5befca90e38aaf5")
 	if !ok {
