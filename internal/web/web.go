@@ -277,7 +277,7 @@ func (h *Handler) handleMinecraftPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		h.flashMinecraft(w, r, "", "invalid form")
+		h.flashMinecraft(w, "", "invalid form")
 		return
 	}
 
@@ -285,29 +285,29 @@ func (h *Handler) handleMinecraftPage(w http.ResponseWriter, r *http.Request) {
 	case "save":
 		h.minecraftDoSave(w, r)
 	case "add":
-		h.minecraftDoAdd(w, r)
+		h.minecraftDoAdd(w)
 	case "delete":
 		h.minecraftDoDelete(w, r)
 	case "health-check":
 		h.minecraftDoHealthCheck(w, r)
 	default:
-		h.flashMinecraft(w, r, "", "unknown action")
+		h.flashMinecraft(w, "", "unknown action")
 	}
 }
 
 func (h *Handler) minecraftDoSave(w http.ResponseWriter, r *http.Request) {
 	minecraftConfig, err := h.parseMinecraftConfigForm(r)
 	if err != nil {
-		h.flashMinecraft(w, r, "", err.Error())
+		h.flashMinecraft(w, "", err.Error())
 		return
 	}
 
 	h.config.Minecraft = minecraftConfig
 	config.ApplyDefaults(h.config)
-	h.saveMinecraftConfig(w, r, "Minecraft settings updated")
+	h.saveMinecraftConfig(w, "Minecraft settings updated")
 }
 
-func (h *Handler) minecraftDoAdd(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) minecraftDoAdd(w http.ResponseWriter) {
 	nextID := nextMinecraftInstanceID(h.config.Minecraft.Instances)
 	h.config.Minecraft.Instances = append(h.config.Minecraft.Instances, config.MinecraftInstanceConfig{
 		ID:      nextID,
@@ -327,25 +327,25 @@ func (h *Handler) minecraftDoAdd(w http.ResponseWriter, r *http.Request) {
 	})
 
 	config.ApplyDefaults(h.config)
-	h.saveMinecraftConfig(w, r, "Minecraft connector added")
+	h.saveMinecraftConfig(w, "Minecraft connector added")
 }
 
 func (h *Handler) minecraftDoDelete(w http.ResponseWriter, r *http.Request) {
 	index, err := strconv.Atoi(strings.TrimSpace(r.FormValue("index")))
 	if err != nil || index < 0 || index >= len(h.config.Minecraft.Instances) {
-		h.flashMinecraft(w, r, "", "invalid connector index")
+		h.flashMinecraft(w, "", "invalid connector index")
 		return
 	}
 
 	h.config.Minecraft.Instances = append(h.config.Minecraft.Instances[:index], h.config.Minecraft.Instances[index+1:]...)
 	config.ApplyDefaults(h.config)
-	h.saveMinecraftConfig(w, r, "Minecraft connector deleted")
+	h.saveMinecraftConfig(w, "Minecraft connector deleted")
 }
 
 // saveMinecraftConfig persists the current config and applies it to the Minecraft service.
-func (h *Handler) saveMinecraftConfig(w http.ResponseWriter, r *http.Request, successMsg string) {
+func (h *Handler) saveMinecraftConfig(w http.ResponseWriter, successMsg string) {
 	if err := config.Save(h.configPath, h.config); err != nil {
-		h.flashMinecraft(w, r, "", err.Error())
+		h.flashMinecraft(w, "", err.Error())
 		return
 	}
 
@@ -353,18 +353,18 @@ func (h *Handler) saveMinecraftConfig(w http.ResponseWriter, r *http.Request, su
 		h.minecraft.ApplyConfig(h.config.Minecraft)
 	}
 
-	h.flashMinecraft(w, r, successMsg, "")
+	h.flashMinecraft(w, successMsg, "")
 }
 
 func (h *Handler) minecraftDoHealthCheck(w http.ResponseWriter, r *http.Request) {
 	if h.minecraft == nil {
-		h.flashMinecraft(w, r, "", "Minecraft service is not running")
+		h.flashMinecraft(w, "", "Minecraft service is not running")
 		return
 	}
 
 	id := strings.TrimSpace(r.FormValue("id"))
 	if id == "" {
-		h.flashMinecraft(w, r, "", "connector id is required")
+		h.flashMinecraft(w, "", "connector id is required")
 		return
 	}
 
@@ -372,11 +372,11 @@ func (h *Handler) minecraftDoHealthCheck(w http.ResponseWriter, r *http.Request)
 	defer cancel()
 
 	if err := h.minecraft.CheckHealth(ctx, id); err != nil {
-		h.flashMinecraft(w, r, "", "health check failed: "+err.Error())
+		h.flashMinecraft(w, "", "health check failed: "+err.Error())
 		return
 	}
 
-	h.flashMinecraft(w, r, "health check passed for "+id, "")
+	h.flashMinecraft(w, "health check passed for "+id, "")
 }
 
 func (h *Handler) renderMinecraftPage(w http.ResponseWriter, data PageData) {
@@ -963,7 +963,7 @@ func parseBanEntryForm(r *http.Request) (database.BanEntry, error) {
 
 // flashMinecraft renders the Minecraft page with a flash message/error directly,
 // avoiding a redirect that would cause the page to jump.
-func (h *Handler) flashMinecraft(w http.ResponseWriter, r *http.Request, msg string, errMsg string) {
+func (h *Handler) flashMinecraft(w http.ResponseWriter, msg string, errMsg string) {
 	h.renderMinecraftPage(w, PageData{Title: "Minecraft", Version: h.version, Message: msg, ErrorMessage: errMsg})
 }
 
@@ -973,7 +973,7 @@ func (h *Handler) flashDatabase(w http.ResponseWriter, r *http.Request, msg stri
 }
 
 // flashIdentity renders the Identity page with a flash message/error directly.
-func (h *Handler) flashIdentity(w http.ResponseWriter, r *http.Request, msg string, errMsg string) {
+func (h *Handler) flashIdentity(w http.ResponseWriter, msg string, errMsg string) {
 	current := h.identityService.Current()
 	h.renderPage(w, "identity.html", PageData{
 		Title:         "Identity",
@@ -985,7 +985,7 @@ func (h *Handler) flashIdentity(w http.ResponseWriter, r *http.Request, msg stri
 }
 
 // flashSecurity renders the Security page with a flash message/error directly.
-func (h *Handler) flashSecurity(w http.ResponseWriter, r *http.Request, msg string, errMsg string) {
+func (h *Handler) flashSecurity(w http.ResponseWriter, msg string, errMsg string) {
 	webToken := strings.TrimSpace(h.secretManager.Get(secrets.WebTokenEnv))
 	keyPassphrase := strings.TrimSpace(h.secretManager.Get(secrets.KeyPassphraseEnv))
 	h.renderPage(w, "security.html", PageData{
@@ -1018,7 +1018,7 @@ func (h *Handler) handleIdentityPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		h.flashIdentity(w, r, "", "invalid form")
+		h.flashIdentity(w, "", "invalid form")
 		return
 	}
 
@@ -1028,14 +1028,14 @@ func (h *Handler) handleIdentityPage(w http.ResponseWriter, r *http.Request) {
 	case "new-keypair":
 		h.identityDoNewKeyPair(w, r)
 	default:
-		h.flashIdentity(w, r, "", "unknown action")
+		h.flashIdentity(w, "", "unknown action")
 	}
 }
 
 func (h *Handler) identityDoImport(w http.ResponseWriter, r *http.Request) {
 	raw := strings.TrimSpace(r.FormValue("keypair_json"))
 	if raw == "" {
-		h.flashIdentity(w, r, "", "key pair json is required")
+		h.flashIdentity(w, "", "key pair json is required")
 		return
 	}
 
@@ -1043,11 +1043,11 @@ func (h *Handler) identityDoImport(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := h.identityService.ImportKeyPairJSON(ctx, []byte(raw)); err != nil {
-		h.flashIdentity(w, r, "", err.Error())
+		h.flashIdentity(w, "", err.Error())
 		return
 	}
 
-	h.flashIdentity(w, r, "key pair imported", "")
+	h.flashIdentity(w, "key pair imported", "")
 }
 
 func (h *Handler) identityDoNewKeyPair(w http.ResponseWriter, r *http.Request) {
@@ -1060,11 +1060,11 @@ func (h *Handler) identityDoNewKeyPair(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := h.identityService.CreateNewIdentity(ctx, displayName); err != nil {
-		h.flashIdentity(w, r, "", err.Error())
+		h.flashIdentity(w, "", err.Error())
 		return
 	}
 
-	h.flashIdentity(w, r, "new key pair created", "")
+	h.flashIdentity(w, "new key pair created", "")
 }
 
 func (h *Handler) handleExportIdentity(w http.ResponseWriter, r *http.Request) {
@@ -1109,7 +1109,7 @@ func (h *Handler) handleSecuritySettingsPage(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := r.ParseForm(); err != nil {
-		h.flashSecurity(w, r, "", "invalid form")
+		h.flashSecurity(w, "", "invalid form")
 		return
 	}
 
@@ -1125,31 +1125,31 @@ func (h *Handler) handleSecuritySettingsPage(w http.ResponseWriter, r *http.Requ
 	case "token-update":
 		h.securityDoTokenUpdate(w, r)
 	default:
-		h.flashSecurity(w, r, "", "unknown action")
+		h.flashSecurity(w, "", "unknown action")
 	}
 }
 
 func (h *Handler) securityDoWebUI(w http.ResponseWriter, r *http.Request) {
 	listen := strings.TrimSpace(r.FormValue("listen"))
 	if listen == "" {
-		h.flashSecurity(w, r, "", "listen address is required")
+		h.flashSecurity(w, "", "listen address is required")
 		return
 	}
 
 	h.config.WebUI.Listen = listen
 
 	if err := config.Save(h.configPath, h.config); err != nil {
-		h.flashSecurity(w, r, "", err.Error())
+		h.flashSecurity(w, "", err.Error())
 		return
 	}
 
-	h.flashSecurity(w, r, "WebUI settings updated. Restart is required for listen address changes.", "")
+	h.flashSecurity(w, "WebUI settings updated. Restart is required for listen address changes.", "")
 }
 
 func (h *Handler) securityDoPassphrase(w http.ResponseWriter, r *http.Request) {
 	newPassphrase := strings.TrimSpace(r.FormValue("new_passphrase"))
 	if newPassphrase == "" {
-		h.flashSecurity(w, r, "", "new passphrase is required")
+		h.flashSecurity(w, "", "new passphrase is required")
 		return
 	}
 
@@ -1162,23 +1162,23 @@ func (h *Handler) securityDoPassphrase(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := h.identityService.UpdateKeyProtection(ctx, keyOptions); err != nil {
-		h.flashSecurity(w, r, "", err.Error())
+		h.flashSecurity(w, "", err.Error())
 		return
 	}
 
 	if err := h.secretManager.Set(secrets.KeyPassphraseEnv, newPassphrase); err != nil {
-		h.flashSecurity(w, r, "", err.Error())
+		h.flashSecurity(w, "", err.Error())
 		return
 	}
 
 	h.config.Security.EncryptPrivateKey = true
 
 	if err := config.Save(h.configPath, h.config); err != nil {
-		h.flashSecurity(w, r, "", err.Error())
+		h.flashSecurity(w, "", err.Error())
 		return
 	}
 
-	h.flashSecurity(w, r, "private key passphrase updated", "")
+	h.flashSecurity(w, "private key passphrase updated", "")
 }
 
 func (h *Handler) securityDoDisableEncryption(w http.ResponseWriter, r *http.Request) {
@@ -1193,69 +1193,69 @@ func (h *Handler) securityDoDisableEncryption(w http.ResponseWriter, r *http.Req
 	defer cancel()
 
 	if err := h.identityService.UpdateKeyProtection(ctx, keyOptions); err != nil {
-		h.flashSecurity(w, r, "", err.Error())
+		h.flashSecurity(w, "", err.Error())
 		return
 	}
 
 	if err := h.secretManager.Delete(secrets.KeyPassphraseEnv); err != nil {
-		h.flashSecurity(w, r, "", err.Error())
+		h.flashSecurity(w, "", err.Error())
 		return
 	}
 
 	h.config.Security.EncryptPrivateKey = false
 
 	if err := config.Save(h.configPath, h.config); err != nil {
-		h.flashSecurity(w, r, "", err.Error())
+		h.flashSecurity(w, "", err.Error())
 		return
 	}
 
-	h.flashSecurity(w, r, "private key encryption disabled", "")
+	h.flashSecurity(w, "private key encryption disabled", "")
 }
 
 func (h *Handler) securityDoTokenRegenerate(w http.ResponseWriter, r *http.Request) {
 	newToken, err := h.secretManager.RegenerateRandom(secrets.WebTokenEnv, 16)
 	if err != nil {
-		h.flashSecurity(w, r, "", err.Error())
+		h.flashSecurity(w, "", err.Error())
 		return
 	}
 
 	// Keep the current browser logged in after the token changes.
 	auth.SetSessionCookie(w, r, newToken)
 
-	h.flashSecurity(w, r, "WebUI token regenerated", "")
+	h.flashSecurity(w, "WebUI token regenerated", "")
 }
 
 func (h *Handler) securityDoTokenUpdate(w http.ResponseWriter, r *http.Request) {
 	newToken := strings.TrimSpace(r.FormValue("web_token"))
 	if newToken == "" {
-		h.flashSecurity(w, r, "", "new WebUI token is required")
+		h.flashSecurity(w, "", "new WebUI token is required")
 		return
 	}
 
 	if len(newToken) < 2 {
-		h.flashSecurity(w, r, "", "WebUI token must be at least 2 characters")
+		h.flashSecurity(w, "", "WebUI token must be at least 2 characters")
 		return
 	}
 
 	if len(newToken) > 128 {
-		h.flashSecurity(w, r, "", "WebUI token must be at most 128 characters")
+		h.flashSecurity(w, "", "WebUI token must be at most 128 characters")
 		return
 	}
 
 	if strings.ContainsAny(newToken, "\r\n\t ") {
-		h.flashSecurity(w, r, "", "WebUI token must not contain whitespace")
+		h.flashSecurity(w, "", "WebUI token must not contain whitespace")
 		return
 	}
 
 	if err := h.secretManager.Set(secrets.WebTokenEnv, newToken); err != nil {
-		h.flashSecurity(w, r, "", err.Error())
+		h.flashSecurity(w, "", err.Error())
 		return
 	}
 
 	// Keep the current browser logged in after the token changes.
 	auth.SetSessionCookie(w, r, newToken)
 
-	h.flashSecurity(w, r, "WebUI token updated", "")
+	h.flashSecurity(w, "WebUI token updated", "")
 }
 
 func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -1272,12 +1272,12 @@ func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		next := safeLoginRedirect(r.FormValue("next"))
 
 		if retryAfter, locked := h.loginLimiter.IsLocked(r); locked {
-			h.renderLoginError(w, r, next, "too many failed login attempts; try again in "+retryAfter.Round(time.Second).String())
+			h.renderLoginError(w, next, "too many failed login attempts; try again in "+retryAfter.Round(time.Second).String())
 			return
 		}
 
 		if err := r.ParseForm(); err != nil {
-			h.renderLoginError(w, r, "/ui", "invalid form")
+			h.renderLoginError(w, "/ui", "invalid form")
 			return
 		}
 
@@ -1292,7 +1292,7 @@ func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 			if retryAfter, locked := h.loginLimiter.RecordFailure(r); locked {
 				message = "too many failed login attempts; try again in " + retryAfter.Round(time.Second).String()
 			}
-			h.renderLoginError(w, r, next, message)
+			h.renderLoginError(w, next, message)
 			return
 		}
 
@@ -1318,7 +1318,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // renderLoginError renders the login page with an error message directly.
-func (h *Handler) renderLoginError(w http.ResponseWriter, r *http.Request, next string, message string) {
+func (h *Handler) renderLoginError(w http.ResponseWriter, next string, message string) {
 	h.renderPage(w, "login.html", PageData{
 		Title:        "Login",
 		Version:      h.version,

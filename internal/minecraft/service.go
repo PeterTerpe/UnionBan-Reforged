@@ -284,7 +284,7 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 	}
 
 	s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
-	s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, client, resolver, policy, recentPlayers, knownServerBans)
+	s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, policy, knownServerBans)
 
 	logTicker := time.NewTicker(logInterval)
 	defer logTicker.Stop()
@@ -304,7 +304,7 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 		case <-logTicker.C:
 			s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
 		case <-banTicker.C:
-			s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, client, resolver, policy, recentPlayers, knownServerBans)
+			s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, policy, knownServerBans)
 		}
 	}
 }
@@ -437,7 +437,7 @@ func (s *Service) handleJoinedPlayer(ctx context.Context, instanceID string, cli
 	s.logger.Warn("kicked Minecraft player", "instance", instanceID, "player", player.Name, "uuid", player.UUID, "policy", decision.PolicyMet, "cached", decision.FromCache)
 }
 
-func (s *Service) importServerBans(ctx context.Context, instanceID string, bannedPlayersPath string, client *RCONClient, resolver *UUIDResolver, policy resolvedPolicy, recentPlayers map[string]Player, knownServerBans map[string]bool) {
+func (s *Service) importServerBans(ctx context.Context, instanceID string, bannedPlayersPath string, policy resolvedPolicy, knownServerBans map[string]bool) {
 	now := time.Now().Unix()
 
 	// Read bans from banned-players.json — avoids performance impact on the
