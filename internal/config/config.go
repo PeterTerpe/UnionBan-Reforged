@@ -33,8 +33,7 @@ type APIConfig struct {
 }
 
 type WebUIConfig struct {
-	Listen                string `yaml:"listen"`
-	RequireTokenForRemote bool   `yaml:"require_token_for_remote"`
+	Listen string `yaml:"listen"`
 }
 
 type SecurityConfig struct {

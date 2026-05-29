@@ -107,25 +107,6 @@ func (l *LoginLimiter) Reset(r *http.Request) {
 	delete(l.failures, key)
 }
 
-func RequestHasValidToken(r *http.Request, expectedToken string) bool {
-	provided := ""
-
-	if value := strings.TrimSpace(r.Header.Get("X-MeshBan-Token")); value != "" {
-		provided = value
-	}
-
-	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		provided = strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-	}
-
-	if value := strings.TrimSpace(r.URL.Query().Get("token")); value != "" {
-		provided = value
-	}
-
-	return TokenMatches(provided, expectedToken)
-}
-
 func TokenMatches(provided string, expected string) bool {
 	provided = strings.TrimSpace(provided)
 	expected = strings.TrimSpace(expected)

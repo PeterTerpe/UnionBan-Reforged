@@ -61,7 +61,7 @@ func NewServer(options Options) *Server {
 
 	mux.HandleFunc("/api/v1/status", s.handleStatus)
 
-	handler := adminAccessMiddleware(mux, options.Config, options.SecretManager)
+	handler := adminAccessMiddleware(mux, options.SecretManager)
 	s.server = &http.Server{
 		Addr:              options.ListenAddr,
 		Handler:           handler,
@@ -143,29 +143,51 @@ func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 }
 
 func isLoopbackRequest(r *http.Request) bool {
+	for _, ip := range clientIPs(r) {
+		if ip.IsLoopback() {
+			return true
+		}
+	}
+	return false
+}
+
+func clientIPs(r *http.Request) []net.IP {
+	var ips []net.IP
+
+	// Respect X-Forwarded-For set by reverse proxies like nginx.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		for _, part := range strings.Split(xff, ",") {
+			ip := net.ParseIP(strings.TrimSpace(part))
+			if ip != nil {
+				ips = append(ips, ip)
+			}
+		}
+	}
+
+	// X-Real-IP is commonly set by nginx as well.
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		ip := net.ParseIP(strings.TrimSpace(xri))
+		if ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+
+	// Always include the direct remote address.
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
-
-	host = strings.TrimSpace(host)
-
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
+	if ip := net.ParseIP(strings.TrimSpace(host)); ip != nil {
+		ips = append(ips, ip)
 	}
 
-	return ip.IsLoopback()
+	return ips
 }
 
-func adminAccessMiddleware(next http.Handler, cfg *config.Config, secretManager *secrets.Manager) http.Handler {
+func adminAccessMiddleware(next http.Handler, secretManager *secrets.Manager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow local loopback access without authentication.
 		if isLoopbackRequest(r) {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		if cfg != nil && !cfg.WebUI.RequireTokenForRemote {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -181,16 +203,11 @@ func adminAccessMiddleware(next http.Handler, cfg *config.Config, secretManager 
 		}
 
 		if token == "" {
-			http.Error(w, "remote access token is not configured", http.StatusForbidden)
+			http.Error(w, "access token is not configured", http.StatusForbidden)
 			return
 		}
 
 		if auth.HasValidSession(r, token) {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		if auth.RequestHasValidToken(r, token) {
 			next.ServeHTTP(w, r)
 			return
 		}

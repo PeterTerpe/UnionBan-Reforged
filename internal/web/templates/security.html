@@ -19,11 +19,6 @@
         <label>WebUI Listen Address</label>
         <input class="input" name="listen" value="{{.Config.WebUI.Listen}}">
 
-        <label>
-            <input type="checkbox" name="require_token_for_remote" {{if .Config.WebUI.RequireTokenForRemote}}checked{{end}}>
-            Require token for non-local access
-        </label>
-
         <p class="warning-text">
             Listen address changes require restart.
         </p>

@@ -6,7 +6,6 @@ database:
 
 webui:
   listen: "127.0.0.1:30000"
-  require_token_for_remote: true
 
 security:
   encrypt_private_key: true

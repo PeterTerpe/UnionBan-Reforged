@@ -1064,7 +1064,6 @@ func (h *Handler) handleUpdateWebUISettings(w http.ResponseWriter, r *http.Reque
 	}
 
 	h.config.WebUI.Listen = listen
-	h.config.WebUI.RequireTokenForRemote = r.FormValue("require_token_for_remote") == "on"
 
 	if err := config.Save(h.configPath, h.config); err != nil {
 		redirectWithError(w, r, "/ui/settings/security", err.Error())
