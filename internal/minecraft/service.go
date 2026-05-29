@@ -264,7 +264,7 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 	resolverConfig := mergeUUIDResolverConfig(cfg.UUIDResolver, instance.UUIDResolver)
 	resolver := NewUUIDResolver(resolverConfig, s.secretManager, s.logger)
 	recentPlayers := make(map[string]Player)
-	knownServerBans := make(map[string]bool)
+	knownServerBans := make(map[string]ServerBan)
 	logUUIDs := make(map[string]Player)
 	onlinePlayers := make(map[string]Player)
 
@@ -275,12 +275,44 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 	})
 	s.logger.Info("starting Minecraft monitor", "instance", instanceID, "address", address, "log_path", tailer.path, "log_interval", logInterval.String(), "ban_poll_interval", banPollInterval.String())
 
-	// One-time startup health check.
-	if _, err := client.Command(ctx, "list"); err != nil {
+	// One-time startup health check and online player discovery.
+	// Parse the list response to seed onlinePlayers with currently
+	// connected players and evaluate each against the banlist policy.
+	listResponse, err := client.Command(ctx, "list")
+	if err != nil {
 		s.setRCONError(instanceID, "RCON connection failed: "+err.Error())
 		s.logger.Warn("RCON health check failed on startup", "instance", instanceID, "error", err)
 	} else {
 		s.setRCONError(instanceID, "")
+
+		startupPlayers := parseListUUIDs(listResponse)
+		if len(startupPlayers) == 0 {
+			startupPlayers = parseListNames(listResponse)
+		}
+
+		for _, player := range startupPlayers {
+			if player.UUID == "" {
+				if uuid, ok := s.playerUUIDFromRCON(ctx, client, player.Name); ok {
+					player.UUID = uuid
+					player.UUIDSource = "official"
+				} else if resolver != nil && resolver.config.Enabled {
+					resolved, resolveErr := resolver.ResolveWithSource(ctx, player.Name)
+					if resolveErr == nil {
+						player.UUID = resolved.UUID
+						player.UUIDSource = resolved.Source
+					}
+				}
+			}
+
+			if player.UUID == "" {
+				s.logger.Warn("skipping online player at startup because UUID could not be resolved", "instance", instanceID, "player", player.Name)
+				continue
+			}
+
+			key := strings.ToLower(player.Name)
+			onlinePlayers[key] = player
+			s.handleJoinedPlayer(ctx, instanceID, client, policy, player)
+		}
 	}
 
 	s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
@@ -437,7 +469,7 @@ func (s *Service) handleJoinedPlayer(ctx context.Context, instanceID string, cli
 	s.logger.Warn("kicked Minecraft player", "instance", instanceID, "player", player.Name, "uuid", player.UUID, "policy", decision.PolicyMet, "cached", decision.FromCache)
 }
 
-func (s *Service) importServerBans(ctx context.Context, instanceID string, bannedPlayersPath string, policy resolvedPolicy, knownServerBans map[string]bool) {
+func (s *Service) importServerBans(ctx context.Context, instanceID string, bannedPlayersPath string, policy resolvedPolicy, knownServerBans map[string]ServerBan) {
 	now := time.Now().Unix()
 
 	// Read bans from banned-players.json — avoids performance impact on the
@@ -448,15 +480,15 @@ func (s *Service) importServerBans(ctx context.Context, instanceID string, banne
 		return
 	}
 
-	newBans := make(map[string]bool, len(bannedPlayers))
+	newBans := make(map[string]ServerBan, len(bannedPlayers))
 	for key, serverBan := range bannedPlayers {
 		if serverBan.UUID == "" {
 			s.logger.Warn("skipping server ban with empty UUID", "instance", instanceID, "player", serverBan.Name)
 			continue
 		}
 
-		newBans[key] = true
-		if knownServerBans[key] {
+		newBans[key] = serverBan
+		if _, alreadyKnown := knownServerBans[key]; alreadyKnown {
 			continue
 		}
 
@@ -471,13 +503,35 @@ func (s *Service) importServerBans(ctx context.Context, instanceID string, banne
 			continue
 		}
 
-		knownServerBans[key] = true
+		knownServerBans[key] = serverBan
 	}
 
 	// Clean up stale entries for bans that were removed from the file.
-	for knownName := range knownServerBans {
-		if !newBans[knownName] {
-			delete(knownServerBans, knownName)
+	for knownName, knownBan := range knownServerBans {
+		if _, stillPresent := newBans[knownName]; stillPresent {
+			continue
+		}
+
+		delete(knownServerBans, knownName)
+
+		if knownBan.UUID == "" {
+			continue
+		}
+
+		deleted, err := s.database.DeleteBanEntriesByPlayerUUIDAndSourceNodeID(ctx, knownBan.UUID, s.localNodeID)
+		if err != nil {
+			s.logger.Error("failed to delete removed server ban from database", "instance", instanceID, "player", knownBan.Name, "uuid", knownBan.UUID, "error", err)
+			continue
+		}
+
+		if deleted > 0 {
+			s.logger.Info("removed server ban entry from database", "instance", instanceID, "player", knownBan.Name, "uuid", knownBan.UUID, "deleted", deleted)
+
+			// Remove stale cache entries so the next decidePlayer call
+			// recomputes without the deleted ban.
+			if err := s.database.DeletePlayerDecisionCache(ctx, instanceID, knownBan.UUID); err != nil {
+				s.logger.Warn("failed to delete player decision cache after ban removal", "instance", instanceID, "player", knownBan.Name, "uuid", knownBan.UUID, "error", err)
+			}
 		}
 	}
 

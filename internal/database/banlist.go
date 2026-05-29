@@ -278,6 +278,29 @@ func (d *Database) DeleteBanEntry(ctx context.Context, id int64) error {
 	return nil
 }
 
+// DeleteBanEntriesByPlayerUUIDAndSourceNodeID removes all banlist entries for
+// a given player UUID that were created by a specific source node.  It returns
+// the number of rows deleted.
+func (d *Database) DeleteBanEntriesByPlayerUUIDAndSourceNodeID(ctx context.Context, playerUUID string, sourceNodeID string) (int64, error) {
+	playerUUID = NormalizePlayerUUID(playerUUID)
+	sourceNodeID = strings.TrimSpace(sourceNodeID)
+
+	if playerUUID == "" || sourceNodeID == "" {
+		return 0, nil
+	}
+
+	result, err := d.db.ExecContext(ctx, `
+		DELETE FROM banlist
+		WHERE player_uuid = ?
+			AND source_node_id = ?
+		`, playerUUID, sourceNodeID)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.RowsAffected()
+}
+
 func normalizeBanEntry(entry *BanEntry) {
 	entry.PlayerUUID = NormalizePlayerUUID(entry.PlayerUUID)
 	entry.PlayerName = strings.TrimSpace(entry.PlayerName)

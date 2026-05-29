@@ -14,10 +14,8 @@ func TestLogTailerStartsAtEnd(t *testing.T) {
 		t.Fatalf("WriteFile returned error: %v", err)
 	}
 
-	readFromEnd := true
 	tailer := newLogTailer(config.MinecraftLogConfig{
-		Path:               path,
-		ReadFromEndOnStart: &readFromEnd,
+		Path: path,
 	})
 
 	lines, err := tailer.ReadNewLines()
@@ -52,15 +50,32 @@ func TestLogTailerStartsAtEnd(t *testing.T) {
 
 func TestLogTailerKeepsPartialLine(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "latest.log")
-	if err := os.WriteFile(path, []byte("partial"), 0o600); err != nil {
+
+	// Start with an empty file (tailer always reads from end).
+	if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
 		t.Fatalf("WriteFile returned error: %v", err)
 	}
 
-	readFromEnd := false
 	tailer := newLogTailer(config.MinecraftLogConfig{
-		Path:               path,
-		ReadFromEndOnStart: &readFromEnd,
+		Path: path,
 	})
+
+	// Initialize the tailer — sets offset to end of (empty) file.
+	if _, err := tailer.ReadNewLines(); err != nil {
+		t.Fatalf("ReadNewLines returned error: %v", err)
+	}
+
+	// Write a partial line without a newline.
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("OpenFile returned error: %v", err)
+	}
+	if _, err := file.WriteString("partial"); err != nil {
+		t.Fatalf("WriteString returned error: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
 
 	lines, err := tailer.ReadNewLines()
 	if err != nil {
@@ -71,7 +86,8 @@ func TestLogTailerKeepsPartialLine(t *testing.T) {
 		t.Fatalf("lines length = %d, want 0", len(lines))
 	}
 
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	// Append the rest of the line.
+	file, err = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatalf("OpenFile returned error: %v", err)
 	}

@@ -60,7 +60,6 @@ minecraft:
       log:
         path: "/home/minecraft/survival/logs/latest.log"
         poll_interval_seconds: 1
-        read_from_end_on_start: true
 
       banned_players_path: "/home/minecraft/survival/banned-players.json"
 

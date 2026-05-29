@@ -11,22 +11,15 @@ import (
 )
 
 type logTailer struct {
-	path               string
-	readFromEndOnStart bool
-	initialized        bool
-	offset             int64
-	pending            string
+	path        string
+	initialized bool
+	offset      int64
+	pending     string
 }
 
 func newLogTailer(cfg config.MinecraftLogConfig) *logTailer {
-	readFromEnd := true
-	if cfg.ReadFromEndOnStart != nil {
-		readFromEnd = *cfg.ReadFromEndOnStart
-	}
-
 	return &logTailer{
-		path:               strings.TrimSpace(cfg.Path),
-		readFromEndOnStart: readFromEnd,
+		path: strings.TrimSpace(cfg.Path),
 	}
 }
 
@@ -49,10 +42,8 @@ func (t *logTailer) ReadNewLines() ([]string, error) {
 	size := info.Size()
 	if !t.initialized {
 		t.initialized = true
-		if t.readFromEndOnStart {
-			t.offset = size
-			return nil, nil
-		}
+		t.offset = size
+		return nil, nil
 	}
 
 	if size < t.offset {

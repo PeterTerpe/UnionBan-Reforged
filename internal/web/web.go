@@ -98,7 +98,6 @@ type MinecraftInstanceFormData struct {
 	LogPath                   string
 	LogPollInterval           int
 	BannedPlayersPollInterval int
-	LogReadFromEnd            bool
 	BannedPlayersPath         string
 	HasRCONPassword           bool
 	Policy                    MinecraftPolicyFormData
@@ -361,7 +360,6 @@ func (h *Handler) minecraftDoAdd(w http.ResponseWriter) {
 		},
 		Log: config.MinecraftLogConfig{
 			PollIntervalSeconds: 1,
-			ReadFromEndOnStart:  boolPtr(true),
 		},
 	})
 
@@ -483,7 +481,6 @@ func (h *Handler) minecraftInstanceFormData(statuses []minecraft.ConnectorStatus
 			LogPath:                   instance.Log.Path,
 			LogPollInterval:           intOrDefault(instance.Log.PollIntervalSeconds, 1),
 			BannedPlayersPollInterval: intOrDefault(instance.RCON.PollIntervalSeconds, 60),
-			LogReadFromEnd:            boolPtrValue(instance.Log.ReadFromEndOnStart, true),
 			BannedPlayersPath:         instance.BannedPlayersPath,
 			HasRCONPassword:           hasPassword,
 			Policy:                    minecraftPolicyFormData(instance.Policy),
@@ -587,7 +584,6 @@ func (h *Handler) parseMinecraftConfigForm(r *http.Request) (config.MinecraftCon
 			Log: config.MinecraftLogConfig{
 				Path:                strings.TrimSpace(r.FormValue(prefix + "_log_path")),
 				PollIntervalSeconds: logPollInterval,
-				ReadFromEndOnStart:  boolPtr(r.FormValue(prefix+"_log_read_from_end") == "on"),
 			},
 			Policy:          parseMinecraftPolicyForm(r, prefix),
 			UUIDResolver:    existing.UUIDResolver,

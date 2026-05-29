@@ -107,7 +107,6 @@ type MinecraftRCONConfig struct {
 type MinecraftLogConfig struct {
 	Path                string `yaml:"path,omitempty"`
 	PollIntervalSeconds int    `yaml:"poll_interval_seconds,omitempty"`
-	ReadFromEndOnStart  *bool  `yaml:"read_from_end_on_start,omitempty"`
 }
 
 func LoadOrCreate(path string, examplePath string) (*Config, error) {
@@ -231,10 +230,6 @@ func applyMinecraftDefaults(cfg *MinecraftConfig) {
 
 		if instance.Log.PollIntervalSeconds <= 0 {
 			instance.Log.PollIntervalSeconds = 1
-		}
-
-		if instance.Log.ReadFromEndOnStart == nil {
-			instance.Log.ReadFromEndOnStart = boolPtr(true)
 		}
 	}
 }

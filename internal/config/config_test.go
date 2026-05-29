@@ -37,10 +37,6 @@ func TestLoadExampleConfigIncludesMinecraftRCON(t *testing.T) {
 		t.Fatalf("log path = %q, want latest.log path", instance.Log.Path)
 	}
 
-	if instance.Log.ReadFromEndOnStart == nil || !*instance.Log.ReadFromEndOnStart {
-		t.Fatal("log tail should read from end on start")
-	}
-
 	if cfg.Minecraft.UUIDResolver.ProxyURL != "PROXY_URL" && cfg.Minecraft.UUIDResolver.ProxyURLEnv != "PROXY_URL" {
 		t.Fatalf("proxy URL config was not loaded from example_config.yaml")
 	}

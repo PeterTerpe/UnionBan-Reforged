@@ -228,11 +228,6 @@
                     </div>
 
                     <label>
-                        <input type="checkbox" name="instance_{{.Index}}_log_read_from_end" {{if .LogReadFromEnd}}checked{{end}}>
-                        Read only new log lines on start
-                    </label>
-
-                    <label>
                         <input type="checkbox" name="instance_{{.Index}}_enabled" {{if .Enabled}}checked{{end}}>
                         Enable this connector
                     </label>
