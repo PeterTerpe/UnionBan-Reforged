@@ -16,7 +16,8 @@
 <div class="card">
     <h2>Add Local Ban Entry</h2>
 
-    <form method="post" action="/ui/database/banlist/create">
+    <form method="post" action="">
+        <input type="hidden" name="_action" value="create">
         <label>Player UUID</label>
         <input class="input" name="player_uuid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
 
@@ -98,15 +99,17 @@
                             </td>
 
                             <td>
-                                <form id="update-ban-{{.ID}}" method="post" action="/ui/database/banlist/update" class="inline-form">
+                                <form id="update-ban-{{.ID}}" method="post" action="" class="inline-form">
+                                    <input type="hidden" name="_action" value="update">
                                     <input type="hidden" name="id" value="{{.ID}}">
                                     <button class="button small-button" type="submit">Update</button>
                                 </form>
 
                                 <form method="post"
-                                    action="/ui/database/banlist/delete"
+                                    action=""
                                     class="inline-form"
                                     onsubmit="return confirm('Delete this ban entry? This action cannot be undone.')">
+                                    <input type="hidden" name="_action" value="delete">
                                     <input type="hidden" name="id" value="{{.ID}}">
                                     <button class="danger-button small-button" type="submit">Delete</button>
                                 </form>

@@ -4,3 +4,4 @@ data/
 config.yaml
 *keypair*.json
 *.key
+.vscode/

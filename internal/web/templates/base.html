@@ -33,6 +33,29 @@
 <main>
     {{template "content" .}}
 </main>
+<script>
+(function () {
+    var y = sessionStorage.getItem("meshban_sy");
+    if (y !== null) {
+        sessionStorage.removeItem("meshban_sy");
+        var n = parseInt(y, 10);
+        if (!isNaN(n)) window.scrollTo(0, n);
+    }
+})();
+</script>
+<script>
+(function () {
+    var toasts = document.querySelectorAll(".result-ok, .result-error");
+    for (var i = 0; i < toasts.length; i++) {
+        (function (el) {
+            setTimeout(function () { el.remove(); }, 1000);
+        })(toasts[i]);
+    }
+    document.addEventListener("submit", function () {
+        try { sessionStorage.setItem("meshban_sy", String(window.scrollY)); } catch (e) {}
+    });
+})();
+</script>
 </body>
 </html>
 {{end}}

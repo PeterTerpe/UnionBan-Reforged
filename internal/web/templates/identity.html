@@ -43,8 +43,9 @@
             </p>
 
             <form method="post"
-                  action="/ui/identity/new-keypair"
+                  action=""
                   onsubmit="return confirm('Create a new key pair? This will replace the current local identity and change this node\'s Node ID.')">
+                <input type="hidden" name="_action" value="new-keypair">
                 <button class="danger-button" type="submit">Create New Key Pair</button>
             </form>
         </div>
@@ -71,8 +72,9 @@
             </p>
 
             <form method="post"
-                  action="/ui/identity/import"
+                  action=""
                   onsubmit="return confirm('Import this key pair? This will replace the current local identity.')">
+                <input type="hidden" name="_action" value="import">
                 <label>Key Pair JSON</label>
                 <textarea class="large-textarea" name="keypair_json" placeholder="Paste exported key pair JSON here"></textarea>
 

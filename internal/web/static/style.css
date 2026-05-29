@@ -104,14 +104,33 @@ main {
     box-sizing: border-box;
 }
 
-.result-ok {
-    color: #15803d;
+.result-ok,
+.result-error {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    max-width: 540px;
+    width: calc(100% - 40px);
+    padding: 14px 20px;
+    border-radius: 12px;
     font-weight: 700;
+    text-align: center;
+    box-shadow: 0 8px 30px rgba(15, 23, 42, 0.18);
+    pointer-events: none;
+}
+
+.result-ok {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
 }
 
 .result-error {
+    background: #fef2f2;
     color: #b91c1c;
-    font-weight: 700;
+    border: 1px solid #fecaca;
 }
 
 code {

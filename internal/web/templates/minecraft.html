@@ -10,12 +10,14 @@
         <p class="result-error">{{.ErrorMessage}}</p>
     {{end}}
 
-    <form method="post" action="/ui/minecraft/add">
+    <form method="post" action="">
+        <input type="hidden" name="_action" value="add">
         <button class="secondary-button" type="submit">Add Connector</button>
     </form>
 </div>
 
-<form method="post" action="/ui/minecraft/save">
+<form method="post" action="">
+    <input type="hidden" name="_action" value="save">
     <input type="hidden" name="instance_count" value="{{len .MinecraftInstances}}">
 
     <div class="card">
@@ -293,10 +295,12 @@
 </form>
 
 {{range .MinecraftInstances}}
-    <form id="health-check-{{.Index}}" method="post" action="/ui/minecraft/health-check">
+    <form id="health-check-{{.Index}}" method="post" action="">
+        <input type="hidden" name="_action" value="health-check">
         <input type="hidden" name="id" value="{{.ID}}">
     </form>
-    <form id="delete-minecraft-{{.Index}}" method="post" action="/ui/minecraft/delete" onsubmit="return confirm('Delete this Minecraft connector?')">
+    <form id="delete-minecraft-{{.Index}}" method="post" action="" onsubmit="return confirm('Delete this Minecraft connector?')">
+        <input type="hidden" name="_action" value="delete">
         <input type="hidden" name="index" value="{{.Index}}">
     </form>
 {{end}}
