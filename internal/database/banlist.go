@@ -20,14 +20,68 @@ type BanEntry struct {
 	UpdatedAt    int64
 }
 
-func (d *Database) ListBanEntries(ctx context.Context) ([]BanEntry, error) {
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT id, player_uuid, player_name, reason, source_node_id, uuid_source, signature, created_at, updated_at
-		FROM banlist
-		ORDER BY updated_at DESC, id DESC
-		`)
+// BanListFilter holds optional filters and pagination for listing ban entries.
+type BanListFilter struct {
+	PlayerUUID   string
+	PlayerName   string
+	SourceNodeID string
+	UUIDSource   string
+	Reason       string
+	Limit        int
+	Offset       int
+}
+
+// BanListResult wraps entries together with a total count for pagination.
+type BanListResult struct {
+	Entries    []BanEntry
+	TotalCount int64
+}
+
+func (d *Database) ListBanEntries(ctx context.Context, filter BanListFilter) (BanListResult, error) {
+	where := "1=1"
+	args := make([]any, 0)
+
+	if filter.PlayerUUID != "" {
+		where += " AND player_uuid = ?"
+		args = append(args, NormalizePlayerUUID(filter.PlayerUUID))
+	}
+	if filter.PlayerName != "" {
+		where += " AND player_name LIKE ?"
+		args = append(args, "%"+filter.PlayerName+"%")
+	}
+	if filter.SourceNodeID != "" {
+		where += " AND source_node_id LIKE ?"
+		args = append(args, "%"+filter.SourceNodeID+"%")
+	}
+	if filter.UUIDSource != "" {
+		where += " AND uuid_source LIKE ?"
+		args = append(args, "%"+filter.UUIDSource+"%")
+	}
+	if filter.Reason != "" {
+		where += " AND reason LIKE ?"
+		args = append(args, "%"+filter.Reason+"%")
+	}
+
+	var totalCount int64
+	countQuery := "SELECT COUNT(*) FROM banlist WHERE " + where
+	if err := d.db.QueryRowContext(ctx, countQuery, args...).Scan(&totalCount); err != nil {
+		return BanListResult{}, err
+	}
+
+	query := "SELECT id, player_uuid, player_name, reason, source_node_id, uuid_source, signature, created_at, updated_at FROM banlist WHERE " + where + " ORDER BY updated_at DESC, id DESC"
+
+	if filter.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
+		if filter.Offset > 0 {
+			query += " OFFSET ?"
+			args = append(args, filter.Offset)
+		}
+	}
+
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return BanListResult{}, err
 	}
 	defer rows.Close()
 
@@ -47,28 +101,27 @@ func (d *Database) ListBanEntries(ctx context.Context) ([]BanEntry, error) {
 			&entry.CreatedAt,
 			&entry.UpdatedAt,
 		); err != nil {
-			return nil, err
+			return BanListResult{}, err
 		}
 
 		entries = append(entries, entry)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return BanListResult{}, err
 	}
 
-	return entries, nil
+	return BanListResult{Entries: entries, TotalCount: totalCount}, nil
 }
 
 func (d *Database) ListBanEntriesByPlayerUUID(ctx context.Context, playerUUID string) ([]BanEntry, error) {
-	compactUUID := CompactPlayerUUID(playerUUID)
 
 	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, player_uuid, player_name, reason, source_node_id, uuid_source, signature, created_at, updated_at
 		FROM banlist
-		WHERE lower(replace(player_uuid, '-', '')) = ?
+		WHERE player_uuid = ?
 		ORDER BY updated_at DESC, id DESC
-		`, compactUUID)
+		`, playerUUID)
 	if err != nil {
 		return nil, err
 	}

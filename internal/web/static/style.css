@@ -79,7 +79,7 @@ main {
 .button {
     border: none;
     border-radius: 10px;
-    padding: 10px 16px;
+    padding: 7px 10px;
     background: #2563eb;
     color: white;
     cursor: pointer;
@@ -137,6 +137,7 @@ code {
     background: #f3f4f6;
     padding: 2px 5px;
     border-radius: 5px;
+    word-break: break-all;
 }
 
 label {
@@ -172,15 +173,10 @@ label {
     border: 1px solid #d1d5db;
 }
 
-.small-button {
-    padding: 7px 10px;
-    margin-top: 4px;
-}
-
 .danger-button {
     border: none;
     border-radius: 10px;
-    padding: 10px 16px;
+    padding: 7px 10px;
     background: #dc2626;
     color: white;
     cursor: pointer;
@@ -213,10 +209,6 @@ label {
 .link-button {
     display: inline-block;
     text-decoration: none;
-}
-
-code {
-    word-break: break-all;
 }
 
 input[type="checkbox"] {
@@ -257,9 +249,63 @@ hr {
     vertical-align: bottom;
 }
 
-.danger-zone {
-    border: 1px solid #fecaca;
-    background: #fff7f7;
+.full-code {
+    display: block;
+    word-break: break-all;
+    white-space: normal;
+}
+
+.data-table .full-code {
+    white-space: normal;
+}
+
+.clip-code {
+    display: inline-block;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+
+.clip-code:hover {
+    background: #dbeafe;
+}
+
+.clip-code.clip-copied {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.data-table .clip-code {
+    white-space: nowrap;
+}
+
+.ban-field[readonly] {
+    background: #f9fafb;
+    color: #374151;
+    cursor: default;
+    border-color: #e5e7eb;
+}
+
+.ban-field.editing {
+    background: #fff;
+    color: #1f2937;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.action-cell {
+    white-space: nowrap;
+}
+
+.action-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
 }
 
 .advanced-section summary {
@@ -292,7 +338,7 @@ hr {
 .secondary-button {
     border: none;
     border-radius: 10px;
-    padding: 8px 14px;
+    padding: 7px 10px;
     background: #374151;
     color: white;
     cursor: pointer;
@@ -496,6 +542,54 @@ hr {
 
 .server-log-view {
     max-height: 340px;
+}
+
+.banlist-info {
+    margin-bottom: 12px;
+    color: #374151;
+    font-size: 0.92rem;
+}
+
+.banlist-search {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.search-input {
+    flex: 1;
+    min-width: 130px;
+    max-width: 220px;
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+}
+
+.page-button {
+    display: inline-block;
+    text-decoration: none;
+}
+
+.page-button.disabled {
+    background: #e5e7eb;
+    color: #9ca3af;
+    cursor: default;
+    user-select: none;
+}
+
+.page-info {
+    padding: 0 8px;
+    font-weight: 650;
+    color: #374151;
+    white-space: nowrap;
 }
 
 @media (max-width: 720px) {

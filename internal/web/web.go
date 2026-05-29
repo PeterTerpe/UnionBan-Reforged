@@ -27,6 +27,13 @@ import (
 //go:embed templates/*.html static/*
 var content embed.FS
 
+var templateFuncs = template.FuncMap{
+	"formatUnix":  formatUnix,
+	"statusClass": statusClass,
+	"sub":         func(a, b int) int { return a - b },
+	"add":         func(a, b int) int { return a + b },
+}
+
 type Options struct {
 	Version         string
 	Database        *database.Database
@@ -50,6 +57,7 @@ type Handler struct {
 	logBuffer       *logs.Buffer
 	minecraft       *minecraft.Service
 	loginLimiter    *auth.LoginLimiter
+	templateCache   map[string]*template.Template
 }
 
 type MinecraftPolicyFormData struct {
@@ -106,6 +114,14 @@ type PageData struct {
 	PeerResult                       *peerdebug.Result
 	PeerAddress                      string
 	BanEntries                       []database.BanEntry
+	BanTotalCount                    int64
+	BanCurrentPage                   int
+	BanTotalPages                    int
+	BanPerPage                       int
+	BanSearchUUID                    string
+	BanSearchName                    string
+	BanSearchSource                  string
+	BanSearchReason                  string
 	Message                          string
 	ErrorMessage                     string
 	LocalIdentity                    *identity.Identity
@@ -135,6 +151,29 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 		logBuffer:       options.LogBuffer,
 		minecraft:       options.Minecraft,
 		loginLimiter:    auth.NewLoginLimiter(5, 10*time.Minute, 15*time.Minute),
+		templateCache:   make(map[string]*template.Template),
+	}
+
+	// Pre-parse all page templates once at startup.
+	pages := []string{
+		"dashboard.html",
+		"database.html",
+		"identity.html",
+		"login.html",
+		"logs.html",
+		"minecraft.html",
+		"security.html",
+	}
+	for _, page := range pages {
+		tmpl, err := template.New("").Funcs(templateFuncs).ParseFS(
+			content,
+			"templates/base.html",
+			"templates/"+page,
+		)
+		if err != nil {
+			panic("failed to parse template " + page + ": " + err.Error())
+		}
+		handler.templateCache[page] = tmpl
 	}
 
 	// Serve embedded static files.
@@ -744,25 +783,16 @@ func statusClass(state string) string {
 }
 
 func (h *Handler) renderPage(w http.ResponseWriter, page string, data PageData) {
-	funcs := template.FuncMap{
-		"formatUnix":  formatUnix,
-		"statusClass": statusClass,
-	}
-
-	templates, err := template.New("").Funcs(funcs).ParseFS(
-		content,
-		"templates/base.html",
-		"templates/"+page,
-	)
-	if err != nil {
-		h.logger.Error("failed to parse WebUI template", "error", err)
-		http.Error(w, "failed to parse page", http.StatusInternalServerError)
+	tmpl := h.templateCache[page]
+	if tmpl == nil {
+		h.logger.Error("WebUI template not found in cache", "page", page)
+		http.Error(w, "template not found", http.StatusInternalServerError)
 		return
 	}
 
 	var buffer bytes.Buffer
 
-	if err := templates.ExecuteTemplate(&buffer, "base", data); err != nil {
+	if err := tmpl.ExecuteTemplate(&buffer, "base", data); err != nil {
 		h.logger.Error("failed to render WebUI template", "error", err)
 		http.Error(w, "failed to render page", http.StatusInternalServerError)
 		return
@@ -810,6 +840,8 @@ func (h *Handler) handleDatabasePage(w http.ResponseWriter, r *http.Request) {
 		h.databaseDoDelete(w, r)
 	case "clear_cache":
 		h.databaseDoClearCache(w, r)
+	case "verify_signature":
+		h.databaseDoVerifySignature(w, r)
 	default:
 		h.flashDatabase(w, r, "", "unknown action")
 	}
@@ -922,15 +954,72 @@ func (h *Handler) databaseDoClearCache(w http.ResponseWriter, r *http.Request) {
 	h.flashDatabase(w, r, "player decision cache cleared", "")
 }
 
+func (h *Handler) databaseDoVerifySignature(w http.ResponseWriter, r *http.Request) {
+	playerUUID := r.FormValue("player_uuid")
+	reason := r.FormValue("reason")
+	sourceNodeID := r.FormValue("source_node_id")
+	signature := r.FormValue("signature")
+	updatedAtStr := r.FormValue("updated_at")
+
+	updatedAt, err := strconv.ParseInt(updatedAtStr, 10, 64)
+	if err != nil {
+		h.flashDatabase(w, r, "", "invalid updated_at timestamp")
+		return
+	}
+
+	if err := h.identityService.VerifyBanSignature(playerUUID, reason, sourceNodeID, signature, updatedAt); err != nil {
+		h.flashDatabase(w, r, "", "signature verification failed: "+err.Error())
+		return
+	}
+
+	h.flashDatabase(w, r, "signature is valid - signed by local node "+h.identityService.Current().NodeID, "")
+}
+
 func (h *Handler) renderDatabasePage(w http.ResponseWriter, r *http.Request, data PageData) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
-	entries, err := h.database.ListBanEntries(ctx)
+	// Parse pagination and filter query parameters.
+	query := r.URL.Query()
+	perPage := 25
+	if v := query.Get("per_page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			perPage = n
+		}
+	}
+	page := 1
+	if v := query.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+
+	data.BanPerPage = perPage
+	data.BanCurrentPage = page
+	data.BanSearchUUID = query.Get("uuid")
+	data.BanSearchName = query.Get("name")
+	data.BanSearchSource = query.Get("source")
+	data.BanSearchReason = query.Get("reason")
+
+	filter := database.BanListFilter{
+		PlayerUUID:   data.BanSearchUUID,
+		PlayerName:   data.BanSearchName,
+		SourceNodeID: data.BanSearchSource,
+		UUIDSource:   data.BanSearchSource,
+		Reason:       data.BanSearchReason,
+		Limit:        perPage,
+		Offset:       (page - 1) * perPage,
+	}
+
+	result, err := h.database.ListBanEntries(ctx, filter)
 	if err != nil {
 		data.ErrorMessage = err.Error()
 	} else {
-		data.BanEntries = entries
+		data.BanEntries = result.Entries
+		data.BanTotalCount = result.TotalCount
+		if perPage > 0 {
+			data.BanTotalPages = int((result.TotalCount + int64(perPage) - 1) / int64(perPage))
+		}
 	}
 
 	h.renderPage(w, "database.html", data)

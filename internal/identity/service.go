@@ -213,6 +213,35 @@ func (s *Service) SignLocalBan(playerUUID string, reason string, sourceNodeID st
 	return encodeBase64(signature), nil
 }
 
+// VerifyBanSignature checks whether a ban entry's signature is valid against the local identity's public key.
+// It returns nil if valid, or an error describing why verification failed.
+func (s *Service) VerifyBanSignature(playerUUID, reason, sourceNodeID, signature string, updatedAt int64) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	pubKeyBytes, err := decodeBase64(s.current.PublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to decode local public key: %w", err)
+	}
+
+	if len(pubKeyBytes) != ed25519.PublicKeySize {
+		return fmt.Errorf("local public key has unexpected size %d", len(pubKeyBytes))
+	}
+
+	sigBytes, err := decodeBase64(signature)
+	if err != nil {
+		return fmt.Errorf("failed to decode signature: %w", err)
+	}
+
+	message := buildBanSignaturePayload(playerUUID, reason, sourceNodeID, updatedAt)
+
+	if !ed25519.Verify(ed25519.PublicKey(pubKeyBytes), []byte(message), sigBytes) {
+		return fmt.Errorf("signature verification failed: payload does not match signature")
+	}
+
+	return nil
+}
+
 func generateIdentity(displayName string, keyOptions KeyOptions) (*Identity, error) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

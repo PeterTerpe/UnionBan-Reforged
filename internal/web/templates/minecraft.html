@@ -150,8 +150,8 @@
                 <section id="minecraft-server-{{.Index}}" class="card connector-card server-tab-panel {{if eq .Index 0}}active{{end}}" role="tabpanel">
                     <div class="connector-heading">
                         <h2>Connector: {{.ID}}</h2>
-                        <button class="secondary-button small-button" type="submit" form="health-check-{{.Index}}">Health Check</button>
-                        <button class="danger-button small-button" type="submit" form="delete-minecraft-{{.Index}}">Delete</button>
+                        <button class="secondary-button" type="submit" form="health-check-{{.Index}}">Health Check</button>
+                        <button class="danger-button" type="submit" form="delete-minecraft-{{.Index}}">Delete</button>
                     </div>
 
                     {{if .Status}}

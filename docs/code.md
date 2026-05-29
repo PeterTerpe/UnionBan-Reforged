@@ -1,5 +1,6 @@
 # Code Structure & Purpose
-This document briefly explain the code structure and each file's purpose
+This document briefly explain the code structure and each file's purpose. 
+Notes may be recorded in [notes.md](./notes.md) before making it to this document.
 ## main.go
 The main programme that handles other components.
 

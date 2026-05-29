@@ -55,6 +55,27 @@
 <div class="card">
     <h2>Local Banlist</h2>
 
+    <div class="banlist-info">
+        <strong>{{.BanTotalCount}}</strong> total ban entry(s)
+        {{if gt .BanTotalPages 1}}
+            &mdash; page <strong>{{.BanCurrentPage}}</strong> of <strong>{{.BanTotalPages}}</strong>
+            {{if .BanSearchUUID}} &middot; UUID: <code>{{.BanSearchUUID}}</code>{{end}}
+            {{if .BanSearchName}} &middot; Name: <code>{{.BanSearchName}}</code>{{end}}
+            {{if .BanSearchSource}} &middot; Source: <code>{{.BanSearchSource}}</code>{{end}}
+            {{if .BanSearchReason}} &middot; Reason: <code>{{.BanSearchReason}}</code>{{end}}
+        {{end}}
+    </div>
+
+    <form method="get" action="" class="banlist-search">
+        <input class="input search-input" type="text" name="uuid" placeholder="UUID" value="{{.BanSearchUUID}}">
+        <input class="input search-input" type="text" name="name" placeholder="Player name" value="{{.BanSearchName}}">
+        <input class="input search-input" type="text" name="source" placeholder="Source node or UUID source" value="{{.BanSearchSource}}">
+        <input class="input search-input" type="text" name="reason" placeholder="Reason" value="{{.BanSearchReason}}">
+        <input type="hidden" name="page" value="1">
+        <button class="button" type="submit">Search</button>
+        <a href="/ui/database" class="secondary-button link-button">Clear</a>
+    </form>
+
     {{if .BanEntries}}
         <div class="table-scroll">
             <table class="data-table">
@@ -75,66 +96,135 @@
 
                 <tbody>
                     {{range .BanEntries}}
-                        <tr>
+                        <tr id="row-{{.ID}}">
+                            <td>{{.ID}}</td>
+
                             <td>
-                                {{.ID}}
+                                <input form="update-ban-{{.ID}}" class="table-input ban-field" name="player_uuid" value="{{.PlayerUUID}}" readonly>
                             </td>
 
                             <td>
-                                <input form="update-ban-{{.ID}}" class="table-input" name="player_uuid" value="{{.PlayerUUID}}">
+                                <input form="update-ban-{{.ID}}" class="table-input ban-field" name="player_name" value="{{.PlayerName}}" readonly>
                             </td>
 
                             <td>
-                                <input form="update-ban-{{.ID}}" class="table-input" name="player_name" value="{{.PlayerName}}">
+                                <input form="update-ban-{{.ID}}" class="table-input ban-field" name="reason" value="{{.Reason}}" readonly>
                             </td>
 
                             <td>
-                                <input form="update-ban-{{.ID}}" class="table-input" name="reason" value="{{.Reason}}">
+                                <input form="update-ban-{{.ID}}" class="table-input ban-field" name="uuid_source" value="{{.UUIDSource}}" readonly>
                             </td>
 
                             <td>
-                                <input form="update-ban-{{.ID}}" class="table-input" name="uuid_source" value="{{.UUIDSource}}">
-                            </td>
-
-                            <td>
-                                <code class="long-code">{{.SourceNodeID}}</code>
+                                <code class="clip-code" title="Click to copy&#10;{{.SourceNodeID}}" data-full="{{.SourceNodeID}}" onclick="copyCode(this)">{{printf "%.20s" .SourceNodeID}}&hellip;</code>
                             </td>
 
                             <td class="signature-cell">
-                                <code title="{{.Signature}}">{{.Signature}}</code>
+                                <code class="clip-code" title="Click to copy&#10;{{.Signature}}" data-full="{{.Signature}}" onclick="copyCode(this)">{{printf "%.20s" .Signature}}&hellip;</code>
                             </td>
 
-                            <td>
-                                <code>{{formatUnix .CreatedAt}}</code>
-                            </td>
+                            <td><code>{{formatUnix .CreatedAt}}</code></td>
+                            <td><code>{{formatUnix .UpdatedAt}}</code></td>
 
-                            <td>
-                                <code>{{formatUnix .UpdatedAt}}</code>
-                            </td>
+                            <td class="action-cell">
+                                <div class="action-btns action-btns-default">
+                                    <button class="button" data-row-id="{{.ID}}" onclick="startEdit(this.dataset.rowId)">Edit</button>
+                                    <form method="post" action="" class="inline-form" onsubmit="return confirm('Delete this ban entry? This action cannot be undone.')">
+                                        <input type="hidden" name="_action" value="delete">
+                                        <input type="hidden" name="id" value="{{.ID}}">
+                                        <button class="danger-button" type="submit">Delete</button>
+                                    </form>
+                                    <form method="post" action="" class="inline-form">
+                                        <input type="hidden" name="_action" value="verify_signature">
+                                        <input type="hidden" name="player_uuid" value="{{.PlayerUUID}}">
+                                        <input type="hidden" name="reason" value="{{.Reason}}">
+                                        <input type="hidden" name="source_node_id" value="{{.SourceNodeID}}">
+                                        <input type="hidden" name="signature" value="{{.Signature}}">
+                                        <input type="hidden" name="updated_at" value="{{.UpdatedAt}}">
+                                        <button class="secondary-button" type="submit">Verify</button>
+                                    </form>
+                                </div>
 
-                            <td>
-                                <form id="update-ban-{{.ID}}" method="post" action="" class="inline-form">
-                                    <input type="hidden" name="_action" value="update">
-                                    <input type="hidden" name="id" value="{{.ID}}">
-                                    <button class="button small-button" type="submit">Update</button>
-                                </form>
-
-                                <form method="post"
-                                    action=""
-                                    class="inline-form"
-                                    onsubmit="return confirm('Delete this ban entry? This action cannot be undone.')">
-                                    <input type="hidden" name="_action" value="delete">
-                                    <input type="hidden" name="id" value="{{.ID}}">
-                                    <button class="danger-button small-button" type="submit">Delete</button>
-                                </form>
+                                <div class="action-btns action-btns-edit" style="display:none;">
+                                    <form id="update-ban-{{.ID}}" method="post" action="" class="inline-form">
+                                        <input type="hidden" name="_action" value="update">
+                                        <input type="hidden" name="id" value="{{.ID}}">
+                                        <button class="button" type="submit">Save</button>
+                                    </form>
+                                    <button class="secondary-button" data-row-id="{{.ID}}" onclick="cancelEdit(this.dataset.rowId)">Cancel</button>
+                                </div>
                             </td>
                         </tr>
                     {{end}}
                 </tbody>
             </table>
         </div>
+
+        {{if gt .BanTotalPages 1}}
+            <div class="pagination">
+                {{if gt .BanCurrentPage 1}}
+                    <a class="button page-button" href="?page=1{{if .BanSearchUUID}}&uuid={{.BanSearchUUID}}{{end}}{{if .BanSearchName}}&name={{.BanSearchName}}{{end}}{{if .BanSearchSource}}&source={{.BanSearchSource}}{{end}}{{if .BanSearchReason}}&reason={{.BanSearchReason}}{{end}}">First</a>
+                    <a class="button page-button" href="?page={{sub .BanCurrentPage 1}}{{if .BanSearchUUID}}&uuid={{.BanSearchUUID}}{{end}}{{if .BanSearchName}}&name={{.BanSearchName}}{{end}}{{if .BanSearchSource}}&source={{.BanSearchSource}}{{end}}{{if .BanSearchReason}}&reason={{.BanSearchReason}}{{end}}">Prev</a>
+                {{else}}
+                    <span class="page-button disabled">First</span>
+                    <span class="page-button disabled">Prev</span>
+                {{end}}
+
+                <span class="page-info">Page {{.BanCurrentPage}} of {{.BanTotalPages}}</span>
+
+                {{if lt .BanCurrentPage .BanTotalPages}}
+                    <a class="button page-button" href="?page={{add .BanCurrentPage 1}}{{if .BanSearchUUID}}&uuid={{.BanSearchUUID}}{{end}}{{if .BanSearchName}}&name={{.BanSearchName}}{{end}}{{if .BanSearchSource}}&source={{.BanSearchSource}}{{end}}{{if .BanSearchReason}}&reason={{.BanSearchReason}}{{end}}">Next</a>
+                    <a class="button page-button" href="?page={{.BanTotalPages}}{{if .BanSearchUUID}}&uuid={{.BanSearchUUID}}{{end}}{{if .BanSearchName}}&name={{.BanSearchName}}{{end}}{{if .BanSearchSource}}&source={{.BanSearchSource}}{{end}}{{if .BanSearchReason}}&reason={{.BanSearchReason}}{{end}}">Last</a>
+                {{else}}
+                    <span class="page-button disabled">Next</span>
+                    <span class="page-button disabled">Last</span>
+                {{end}}
+            </div>
+        {{end}}
     {{else}}
         <p>No ban entries found.</p>
     {{end}}
 </div>
+
+<script>
+function startEdit(id) {
+    var row = document.getElementById('row-' + id);
+    var fields = row.querySelectorAll('.ban-field');
+    for (var i = 0; i < fields.length; i++) {
+        fields[i].readOnly = false;
+        fields[i].classList.add('editing');
+    }
+    row.querySelector('.action-btns-default').style.display = 'none';
+    row.querySelector('.action-btns-edit').style.display = '';
+}
+
+function cancelEdit(id) {
+    var row = document.getElementById('row-' + id);
+    var fields = row.querySelectorAll('.ban-field');
+    for (var i = 0; i < fields.length; i++) {
+        fields[i].readOnly = true;
+        fields[i].classList.remove('editing');
+    }
+    row.querySelector('.action-btns-default').style.display = '';
+    row.querySelector('.action-btns-edit').style.display = 'none';
+}
+
+function copyCode(el) {
+    var full = el.getAttribute('data-full');
+    if (!full) return;
+    navigator.clipboard.writeText(full).then(function() {
+        var orig = el.textContent;
+        el.textContent = 'Copied!';
+        el.classList.add('clip-copied');
+        setTimeout(function() {
+            el.textContent = orig;
+            el.classList.remove('clip-copied');
+        }, 1200);
+    }).catch(function() {
+        var orig = el.textContent;
+        el.textContent = 'Copy failed';
+        setTimeout(function() { el.textContent = orig; }, 1200);
+    });
+}
+</script>
 {{end}}

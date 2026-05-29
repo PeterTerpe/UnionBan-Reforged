@@ -21,9 +21,13 @@ func TestTemplatesRender(t *testing.T) {
 
 	for _, page := range pages {
 		t.Run(page, func(t *testing.T) {
+			sub := func(a, b int) int { return a - b }
+			add := func(a, b int) int { return a + b }
 			funcs := template.FuncMap{
 				"formatUnix":  formatUnix,
 				"statusClass": statusClass,
+				"sub":         sub,
+				"add":         add,
 			}
 
 			templates, err := template.New("").Funcs(funcs).ParseFS(
