@@ -525,6 +525,12 @@ func (s *Service) importServerBan(ctx context.Context, instanceID string, server
 		return err
 	}
 
+	// Remove any stale "allow" cache so decidePlayer computes a fresh
+	// decision against the updated ban list.
+	if err := s.database.DeletePlayerDecisionCache(ctx, instanceID, player.UUID); err != nil {
+		s.logger.Warn("failed to delete player decision cache after ban import", "instance", instanceID, "player", player.Name, "uuid", player.UUID, "error", err)
+	}
+
 	if _, err := s.decidePlayer(ctx, instanceID, player.Name, player.UUID, policy); err != nil {
 		return err
 	}

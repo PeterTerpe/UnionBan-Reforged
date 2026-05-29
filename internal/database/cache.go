@@ -158,3 +158,32 @@ func validatePlayerDecisionCacheEntry(entry PlayerDecisionCacheEntry) error {
 
 	return nil
 }
+
+// DeletePlayerDecisionCache removes the cached decision for a player on a
+// specific server.  It is typically called when a new ban is imported so the
+// next decidePlayer call will compute a fresh decision instead of returning a
+// stale "allow".
+func (d *Database) DeletePlayerDecisionCache(ctx context.Context, serverID string, playerUUID string) error {
+	serverID = strings.TrimSpace(serverID)
+	playerUUID = NormalizePlayerUUID(playerUUID)
+
+	if serverID == "" || playerUUID == "" {
+		return nil
+	}
+
+	_, err := d.db.ExecContext(ctx, `
+		DELETE FROM player_decision_cache
+		WHERE server_id = ?
+			AND player_uuid = ?
+		`, serverID, playerUUID)
+
+	return err
+}
+
+// ClearAllPlayerDecisionCache removes every entry from the player decision
+// cache table. It is intended for manual use via the WebUI to force all cached
+// decisions to be recomputed on the next player join.
+func (d *Database) ClearAllPlayerDecisionCache(ctx context.Context) error {
+	_, err := d.db.ExecContext(ctx, `DELETE FROM player_decision_cache`)
+	return err
+}

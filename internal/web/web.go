@@ -808,6 +808,8 @@ func (h *Handler) handleDatabasePage(w http.ResponseWriter, r *http.Request) {
 		h.databaseDoUpdate(w, r)
 	case "delete":
 		h.databaseDoDelete(w, r)
+	case "clear_cache":
+		h.databaseDoClearCache(w, r)
 	default:
 		h.flashDatabase(w, r, "", "unknown action")
 	}
@@ -906,6 +908,18 @@ func (h *Handler) databaseDoDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.flashDatabase(w, r, "ban entry deleted", "")
+}
+
+func (h *Handler) databaseDoClearCache(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	if err := h.database.ClearAllPlayerDecisionCache(ctx); err != nil {
+		h.flashDatabase(w, r, "", err.Error())
+		return
+	}
+
+	h.flashDatabase(w, r, "player decision cache cleared", "")
 }
 
 func (h *Handler) renderDatabasePage(w http.ResponseWriter, r *http.Request, data PageData) {

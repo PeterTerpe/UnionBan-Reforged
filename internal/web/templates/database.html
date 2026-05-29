@@ -14,6 +14,20 @@
 </div>
 
 <div class="card">
+    <h2>Player Decision Cache</h2>
+    <p>
+        The player decision cache stores the result of policy evaluations
+        so that repeated checks for the same player are fast.  Clearing it
+        forces all decisions to be recomputed on the next player join.
+    </p>
+
+    <form method="post" action="" onsubmit="return confirm('Clear the entire player decision cache? All decisions will be recomputed on next join.')">
+        <input type="hidden" name="_action" value="clear_cache">
+        <button class="danger-button" type="submit">Clear Cache</button>
+    </form>
+</div>
+
+<div class="card">
     <h2>Add Local Ban Entry</h2>
 
     <form method="post" action="">
