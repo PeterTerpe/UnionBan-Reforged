@@ -57,11 +57,11 @@
                 The exported key pair contains sensitive identity material. Keep the downloaded file secret and never commit it to Git.
             </p>
 
-            <a class="button link-button"
-               href="/ui/identity/export"
-               onclick="return confirm('Export the key pair? Keep the downloaded file secret and never commit it to Git.')">
-                Download Key Pair JSON
-            </a>
+            <form method="get"
+                  action="/ui/identity/export"
+                  onsubmit="return confirm('Export the key pair? Keep the downloaded file secret and never commit it to Git.')">
+                <button class="button" type="submit">Download Key Pair JSON</button>
+            </form>
         </div>
 
         <div class="danger-zone">

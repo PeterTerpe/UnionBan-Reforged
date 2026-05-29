@@ -73,7 +73,7 @@
         <input class="input search-input" type="text" name="reason" placeholder="Reason" value="{{.BanSearchReason}}">
         <input type="hidden" name="page" value="1">
         <button class="button" type="submit">Search</button>
-        <a href="/ui/database" class="secondary-button link-button">Clear</a>
+        <button class="secondary-button" type="submit" formaction="/ui/database">Clear</button>
     </form>
 
     {{if .BanEntries}}
