@@ -54,6 +54,22 @@
                 <input class="input" type="number" min="0" name="default_untrusted" value="{{.MinecraftPolicy.Untrusted}}">
             </div>
         </div>
+
+        <hr>
+
+        <label>Default Poll Intervals</label>
+        <p class="hint-text">Per-connector values override these defaults.</p>
+
+        <div class="field-grid">
+            <div>
+                <label>Log Scan (seconds)</label>
+                <input class="input" type="number" min="1" name="default_log_poll_interval" value="{{.DefaultLogPollInterval}}">
+            </div>
+            <div>
+                <label>Banned Players Scan (seconds)</label>
+                <input class="input" type="number" min="1" name="default_banned_players_poll_interval" value="{{.DefaultBannedPlayersPollInterval}}">
+            </div>
+        </div>
     </div>
 
     <div class="card">
@@ -132,6 +148,7 @@
                 <section id="minecraft-server-{{.Index}}" class="card connector-card server-tab-panel {{if eq .Index 0}}active{{end}}" role="tabpanel">
                     <div class="connector-heading">
                         <h2>Connector: {{.ID}}</h2>
+                        <button class="secondary-button small-button" type="submit" form="health-check-{{.Index}}">Health Check</button>
                         <button class="danger-button small-button" type="submit" form="delete-minecraft-{{.Index}}">Delete</button>
                     </div>
 
@@ -187,8 +204,8 @@
                             <input class="input" type="password" name="instance_{{.Index}}_rcon_password" placeholder="{{if .HasRCONPassword}}Configured{{else}}Not configured{{end}}">
                         </div>
                         <div>
-                            <label>Ban Poll Interval Seconds</label>
-                            <input class="input" type="number" min="1" name="instance_{{.Index}}_rcon_poll_interval" value="{{.RCONPollInterval}}">
+                            <label>Banned Players Poll Interval Seconds</label>
+                            <input class="input" type="number" min="1" name="instance_{{.Index}}_banned_players_poll_interval" value="{{.BannedPlayersPollInterval}}">
                         </div>
                         <div>
                             <label>Command Timeout Seconds</label>
@@ -276,6 +293,9 @@
 </form>
 
 {{range .MinecraftInstances}}
+    <form id="health-check-{{.Index}}" method="post" action="/ui/minecraft/health-check">
+        <input type="hidden" name="id" value="{{.ID}}">
+    </form>
     <form id="delete-minecraft-{{.Index}}" method="post" action="/ui/minecraft/delete" onsubmit="return confirm('Delete this Minecraft connector?')">
         <input type="hidden" name="index" value="{{.Index}}">
     </form>

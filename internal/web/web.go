@@ -79,48 +79,51 @@ type MinecraftUUIDResolverFormData struct {
 }
 
 type MinecraftInstanceFormData struct {
-	Index              int
-	ID                 string
-	Enabled            bool
-	Mode               string
-	RCONHost           string
-	RCONPort           int
-	RCONPasswordEnv    string
-	RCONPollInterval   int
-	RCONCommandTimeout int
-	LogPath            string
-	LogPollInterval    int
-	LogReadFromEnd     bool
-	BannedPlayersPath  string
-	HasRCONPassword    bool
-	Policy             MinecraftPolicyFormData
-	UUIDResolver       MinecraftUUIDResolverFormData
-	Status             *minecraft.ConnectorStatus
-	LogLines           []string
+	Index                     int
+	ID                        string
+	Enabled                   bool
+	Mode                      string
+	RCONHost                  string
+	RCONPort                  int
+	RCONPasswordEnv           string
+	RCONPollInterval          int
+	RCONCommandTimeout        int
+	LogPath                   string
+	LogPollInterval           int
+	BannedPlayersPollInterval int
+	LogReadFromEnd            bool
+	BannedPlayersPath         string
+	HasRCONPassword           bool
+	Policy                    MinecraftPolicyFormData
+	UUIDResolver              MinecraftUUIDResolverFormData
+	Status                    *minecraft.ConnectorStatus
+	LogLines                  []string
 }
 
 type PageData struct {
-	Title              string
-	Version            string
-	DatabaseResult     *database.DebugInfo
-	PeerResult         *peerdebug.Result
-	PeerAddress        string
-	BanEntries         []database.BanEntry
-	Message            string
-	ErrorMessage       string
-	LocalIdentity      *identity.Identity
-	ExportedKeyPair    string
-	Config             *config.Config
-	HasKeyPassphrase   bool
-	HasWebToken        bool
-	WebToken           string
-	LoginNext          string
-	LoginRetryAfter    string
-	LogLines           []string
-	MinecraftStatus    []minecraft.ConnectorStatus
-	MinecraftPolicy    MinecraftPolicyFormData
-	MinecraftResolver  MinecraftUUIDResolverFormData
-	MinecraftInstances []MinecraftInstanceFormData
+	Title                            string
+	Version                          string
+	DatabaseResult                   *database.DebugInfo
+	PeerResult                       *peerdebug.Result
+	PeerAddress                      string
+	BanEntries                       []database.BanEntry
+	Message                          string
+	ErrorMessage                     string
+	LocalIdentity                    *identity.Identity
+	ExportedKeyPair                  string
+	Config                           *config.Config
+	HasKeyPassphrase                 bool
+	HasWebToken                      bool
+	WebToken                         string
+	LoginNext                        string
+	LoginRetryAfter                  string
+	LogLines                         []string
+	MinecraftStatus                  []minecraft.ConnectorStatus
+	MinecraftPolicy                  MinecraftPolicyFormData
+	MinecraftResolver                MinecraftUUIDResolverFormData
+	MinecraftInstances               []MinecraftInstanceFormData
+	DefaultLogPollInterval           int
+	DefaultBannedPlayersPollInterval int
 }
 
 func RegisterRoutes(mux *http.ServeMux, options Options) {
@@ -175,6 +178,7 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 	mux.HandleFunc("/ui/minecraft/save", handler.handleSaveMinecraftSettings)
 	mux.HandleFunc("/ui/minecraft/add", handler.handleAddMinecraftInstance)
 	mux.HandleFunc("/ui/minecraft/delete", handler.handleDeleteMinecraftInstance)
+	mux.HandleFunc("/ui/minecraft/health-check", handler.handleMinecraftHealthCheck)
 }
 
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -387,12 +391,47 @@ func (h *Handler) handleDeleteMinecraftInstance(w http.ResponseWriter, r *http.R
 	redirectWithMessage(w, r, "/ui/minecraft", "Minecraft connector deleted")
 }
 
+func (h *Handler) handleMinecraftHealthCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.minecraft == nil {
+		redirectWithError(w, r, "/ui/minecraft", "Minecraft service is not running")
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		redirectWithError(w, r, "/ui/minecraft", "invalid form")
+		return
+	}
+
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
+		redirectWithError(w, r, "/ui/minecraft", "connector id is required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+
+	if err := h.minecraft.CheckHealth(ctx, id); err != nil {
+		redirectWithError(w, r, "/ui/minecraft", "health check failed: "+err.Error())
+		return
+	}
+
+	redirectWithMessage(w, r, "/ui/minecraft", "health check passed for "+id)
+}
+
 func (h *Handler) renderMinecraftPage(w http.ResponseWriter, data PageData) {
 	data.Config = h.config
 	data.MinecraftStatus = h.minecraftStatuses()
 	data.MinecraftPolicy = minecraftPolicyFormData(h.config.Minecraft.DefaultPolicy)
 	data.MinecraftResolver = minecraftResolverFormData(h.config.Minecraft.UUIDResolver)
 	data.MinecraftInstances = h.minecraftInstanceFormData(data.MinecraftStatus)
+	data.DefaultLogPollInterval = intOrDefault(h.config.Minecraft.LogPollIntervalSeconds, 1)
+	data.DefaultBannedPlayersPollInterval = intOrDefault(h.config.Minecraft.BannedPlayersPollIntervalSeconds, 60)
 
 	h.renderPage(w, "minecraft.html", data)
 }
@@ -438,24 +477,25 @@ func (h *Handler) minecraftInstanceFormData(statuses []minecraft.ConnectorStatus
 		}
 
 		instances = append(instances, MinecraftInstanceFormData{
-			Index:              i,
-			ID:                 instance.ID,
-			Enabled:            instance.Enabled,
-			Mode:               firstNonEmpty(instance.Mode, "rcon"),
-			RCONHost:           firstNonEmpty(instance.RCON.Host, "127.0.0.1"),
-			RCONPort:           intOrDefault(instance.RCON.Port, 25575),
-			RCONPasswordEnv:    instance.RCON.PasswordEnv,
-			RCONPollInterval:   intOrDefault(instance.RCON.PollIntervalSeconds, 60),
-			RCONCommandTimeout: intOrDefault(instance.RCON.CommandTimeoutSeconds, 3),
-			LogPath:            instance.Log.Path,
-			LogPollInterval:    intOrDefault(instance.Log.PollIntervalSeconds, 1),
-			LogReadFromEnd:     boolPtrValue(instance.Log.ReadFromEndOnStart, true),
-			BannedPlayersPath:  instance.BannedPlayersPath,
-			HasRCONPassword:    hasPassword,
-			Policy:             minecraftPolicyFormData(instance.Policy),
-			UUIDResolver:       minecraftResolverFormData(instance.UUIDResolver),
-			Status:             statusPtr,
-			LogLines:           minecraftLogLinesForInstance(logLines, instanceID),
+			Index:                     i,
+			ID:                        instance.ID,
+			Enabled:                   instance.Enabled,
+			Mode:                      firstNonEmpty(instance.Mode, "rcon"),
+			RCONHost:                  firstNonEmpty(instance.RCON.Host, "127.0.0.1"),
+			RCONPort:                  intOrDefault(instance.RCON.Port, 25575),
+			RCONPasswordEnv:           instance.RCON.PasswordEnv,
+			RCONPollInterval:          intOrDefault(instance.RCON.PollIntervalSeconds, 60),
+			RCONCommandTimeout:        intOrDefault(instance.RCON.CommandTimeoutSeconds, 3),
+			LogPath:                   instance.Log.Path,
+			LogPollInterval:           intOrDefault(instance.Log.PollIntervalSeconds, 1),
+			BannedPlayersPollInterval: intOrDefault(instance.RCON.PollIntervalSeconds, 60),
+			LogReadFromEnd:            boolPtrValue(instance.Log.ReadFromEndOnStart, true),
+			BannedPlayersPath:         instance.BannedPlayersPath,
+			HasRCONPassword:           hasPassword,
+			Policy:                    minecraftPolicyFormData(instance.Policy),
+			UUIDResolver:              minecraftResolverFormData(instance.UUIDResolver),
+			Status:                    statusPtr,
+			LogLines:                  minecraftLogLinesForInstance(logLines, instanceID),
 		})
 	}
 
@@ -469,10 +509,12 @@ func (h *Handler) parseMinecraftConfigForm(r *http.Request) (config.MinecraftCon
 	}
 
 	cfg := config.MinecraftConfig{
-		Enabled:       r.FormValue("minecraft_enabled") == "on",
-		DefaultPolicy: parseMinecraftPolicyForm(r, "default"),
-		UUIDResolver:  parseMinecraftResolverForm(r, "default"),
-		Instances:     make([]config.MinecraftInstanceConfig, 0, instanceCount),
+		Enabled:                          r.FormValue("minecraft_enabled") == "on",
+		DefaultPolicy:                    parseMinecraftPolicyForm(r, "default"),
+		UUIDResolver:                     parseMinecraftResolverForm(r, "default"),
+		LogPollIntervalSeconds:           parseNonNegativeIntValue(r.FormValue("default_log_poll_interval")),
+		BannedPlayersPollIntervalSeconds: parseNonNegativeIntValue(r.FormValue("default_banned_players_poll_interval")),
+		Instances:                        make([]config.MinecraftInstanceConfig, 0, instanceCount),
 	}
 
 	seenIDs := make(map[string]bool, instanceCount)
@@ -500,7 +542,7 @@ func (h *Handler) parseMinecraftConfigForm(r *http.Request) (config.MinecraftCon
 			return config.MinecraftConfig{}, errors.New("RCON port must be at most 65535")
 		}
 
-		pollInterval, err := parsePositiveIntForm(r, prefix+"_rcon_poll_interval", "Ban poll interval")
+		pollInterval, err := parsePositiveIntForm(r, prefix+"_banned_players_poll_interval", "Banned players poll interval")
 		if err != nil {
 			return config.MinecraftConfig{}, err
 		}

@@ -50,10 +50,12 @@ type P2PConfig struct {
 }
 
 type MinecraftConfig struct {
-	Enabled       bool                        `yaml:"enabled"`
-	DefaultPolicy MinecraftPolicyConfig       `yaml:"default_policy,omitempty"`
-	UUIDResolver  MinecraftUUIDResolverConfig `yaml:"uuid_resolver,omitempty"`
-	Instances     []MinecraftInstanceConfig   `yaml:"instances,omitempty"`
+	Enabled                          bool                        `yaml:"enabled"`
+	DefaultPolicy                    MinecraftPolicyConfig       `yaml:"default_policy,omitempty"`
+	UUIDResolver                     MinecraftUUIDResolverConfig `yaml:"uuid_resolver,omitempty"`
+	LogPollIntervalSeconds           int                         `yaml:"log_poll_interval_seconds,omitempty"`
+	BannedPlayersPollIntervalSeconds int                         `yaml:"banned_players_poll_interval_seconds,omitempty"`
+	Instances                        []MinecraftInstanceConfig   `yaml:"instances,omitempty"`
 }
 
 type MinecraftPolicyConfig struct {

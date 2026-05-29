@@ -48,6 +48,9 @@ type Service struct {
 
 	statusMu sync.RWMutex
 	statuses map[string]ConnectorStatus
+
+	rconErrorMu sync.RWMutex
+	rconErrors  map[string]string
 }
 
 type monitorGroup struct {
@@ -97,6 +100,7 @@ func NewService(options Options) *Service {
 		localNodeID:     strings.TrimSpace(options.LocalNodeID),
 		logger:          logger,
 		statuses:        make(map[string]ConnectorStatus),
+		rconErrors:      make(map[string]string),
 	}
 
 	service.initializeStatuses(options.Config)
@@ -227,10 +231,16 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 
 	banPollInterval := time.Duration(instance.RCON.PollIntervalSeconds) * time.Second
 	if banPollInterval <= 0 {
+		banPollInterval = time.Duration(cfg.BannedPlayersPollIntervalSeconds) * time.Second
+	}
+	if banPollInterval <= 0 {
 		banPollInterval = 60 * time.Second
 	}
 
 	logInterval := time.Duration(instance.Log.PollIntervalSeconds) * time.Second
+	if logInterval <= 0 {
+		logInterval = time.Duration(cfg.LogPollIntervalSeconds) * time.Second
+	}
 	if logInterval <= 0 {
 		logInterval = time.Second
 	}
@@ -265,10 +275,16 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 	})
 	s.logger.Info("starting Minecraft monitor", "instance", instanceID, "address", address, "log_path", tailer.path, "log_interval", logInterval.String(), "ban_poll_interval", banPollInterval.String())
 
-	lastRCONError := ""
+	// One-time startup health check.
+	if _, err := client.Command(ctx, "list"); err != nil {
+		s.setRCONError(instanceID, "RCON connection failed: "+err.Error())
+		s.logger.Warn("RCON health check failed on startup", "instance", instanceID, "error", err)
+	} else {
+		s.setRCONError(instanceID, "")
+	}
 
-	s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers, &lastRCONError)
-	s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, client, resolver, policy, recentPlayers, knownServerBans, &lastRCONError)
+	s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
+	s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, client, resolver, policy, recentPlayers, knownServerBans)
 
 	logTicker := time.NewTicker(logInterval)
 	defer logTicker.Stop()
@@ -286,14 +302,14 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 			s.logger.Info("stopping Minecraft monitor", "instance", instanceID)
 			return
 		case <-logTicker.C:
-			s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers, &lastRCONError)
+			s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
 		case <-banTicker.C:
-			s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, client, resolver, policy, recentPlayers, knownServerBans, &lastRCONError)
+			s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, client, resolver, policy, recentPlayers, knownServerBans)
 		}
 	}
 }
 
-func (s *Service) readJoinLog(ctx context.Context, instanceID string, tailer *logTailer, client *RCONClient, resolver *UUIDResolver, policy resolvedPolicy, logUUIDs map[string]Player, recentPlayers map[string]Player, onlinePlayers map[string]Player, lastRCONError *string) {
+func (s *Service) readJoinLog(ctx context.Context, instanceID string, tailer *logTailer, client *RCONClient, resolver *UUIDResolver, policy resolvedPolicy, logUUIDs map[string]Player, recentPlayers map[string]Player, onlinePlayers map[string]Player) {
 	lines, err := tailer.ReadNewLines()
 	now := time.Now().Unix()
 	if err != nil {
@@ -312,11 +328,12 @@ func (s *Service) readJoinLog(ctx context.Context, instanceID string, tailer *lo
 		s.processLogLine(ctx, instanceID, line, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
 	}
 
+	rconError := s.getRCONError(instanceID)
 	state := "ok"
 	message := "log tail active"
-	if *lastRCONError != "" {
+	if rconError != "" {
 		state = "error"
-		message = *lastRCONError
+		message = rconError
 	}
 
 	s.updateStatus(instanceID, func(status *ConnectorStatus) {
@@ -325,8 +342,8 @@ func (s *Service) readJoinLog(ctx context.Context, instanceID string, tailer *lo
 		status.OnlinePlayers = len(onlinePlayers)
 		status.LastPollUnix = now
 		status.LastSuccessUnix = now
-		if *lastRCONError != "" {
-			status.LastError = *lastRCONError
+		if rconError != "" {
+			status.LastError = rconError
 		} else {
 			status.LastError = ""
 		}
@@ -412,6 +429,7 @@ func (s *Service) handleJoinedPlayer(ctx context.Context, instanceID string, cli
 	}
 
 	if err := s.kickPlayer(ctx, client, player.Name, decision.Reason); err != nil {
+		s.setRCONError(instanceID, "RCON kick failed: "+err.Error())
 		s.logger.Error("failed to kick Minecraft player", "instance", instanceID, "player", player.Name, "uuid", player.UUID, "error", err)
 		return
 	}
@@ -419,38 +437,14 @@ func (s *Service) handleJoinedPlayer(ctx context.Context, instanceID string, cli
 	s.logger.Warn("kicked Minecraft player", "instance", instanceID, "player", player.Name, "uuid", player.UUID, "policy", decision.PolicyMet, "cached", decision.FromCache)
 }
 
-func (s *Service) importServerBans(ctx context.Context, instanceID string, bannedPlayersPath string, client *RCONClient, resolver *UUIDResolver, policy resolvedPolicy, recentPlayers map[string]Player, knownServerBans map[string]bool, lastRCONError *string) {
+func (s *Service) importServerBans(ctx context.Context, instanceID string, bannedPlayersPath string, client *RCONClient, resolver *UUIDResolver, policy resolvedPolicy, recentPlayers map[string]Player, knownServerBans map[string]bool) {
 	now := time.Now().Unix()
-
-	// Lightweight RCON health check — much cheaper than "banlist players".
-	if _, err := client.Command(ctx, "list"); err != nil {
-		*lastRCONError = "RCON connection failed: " + err.Error()
-		s.updateStatus(instanceID, func(status *ConnectorStatus) {
-			status.State = "error"
-			status.Message = *lastRCONError
-			status.LastPollUnix = now
-			status.LastErrorUnix = now
-			status.LastError = err.Error()
-		})
-		s.logger.Warn("RCON health check failed", "instance", instanceID, "error", err)
-		return
-	}
-
-	*lastRCONError = ""
 
 	// Read bans from banned-players.json — avoids performance impact on the
 	// Minecraft server compared to querying the full banlist over RCON.
 	bannedPlayers, err := loadBannedPlayersFile(bannedPlayersPath)
 	if err != nil {
 		s.logger.Warn("failed to read banned players JSON", "instance", instanceID, "path", bannedPlayersPath, "error", err)
-		// RCON is healthy even if the file is absent; report ok.
-		s.updateStatus(instanceID, func(status *ConnectorStatus) {
-			status.State = "ok"
-			status.Message = "monitor active"
-			status.LastPollUnix = now
-			status.LastSuccessUnix = now
-			status.LastError = ""
-		})
 		return
 	}
 
@@ -620,6 +614,75 @@ func (s *Service) updateStatus(instanceID string, update func(*ConnectorStatus))
 
 	update(&status)
 	s.statuses[instanceID] = status
+}
+
+func (s *Service) getRCONError(instanceID string) string {
+	s.rconErrorMu.RLock()
+	defer s.rconErrorMu.RUnlock()
+
+	return s.rconErrors[instanceID]
+}
+
+func (s *Service) setRCONError(instanceID string, value string) {
+	s.rconErrorMu.Lock()
+	defer s.rconErrorMu.Unlock()
+
+	if value == "" {
+		delete(s.rconErrors, instanceID)
+	} else {
+		s.rconErrors[instanceID] = value
+	}
+}
+
+// CheckHealth performs a one-time RCON connectivity check and updates the
+// connector status.  It is meant to be called manually (e.g. from the WebUI).
+func (s *Service) CheckHealth(ctx context.Context, id string) error {
+	var instance config.MinecraftInstanceConfig
+	found := false
+	for _, inst := range s.config.Instances {
+		if instanceID(inst) == id {
+			instance = inst
+			found = true
+			break
+		}
+	}
+	if !found {
+		return errors.New("instance not found")
+	}
+
+	password := ""
+	if s.secretManager != nil {
+		password = strings.TrimSpace(s.secretManager.Get(instance.RCON.PasswordEnv))
+	}
+
+	address := net.JoinHostPort(instance.RCON.Host, fmt.Sprintf("%d", instance.RCON.Port))
+	client := NewRCONClient(address, password, 5*time.Second)
+	defer client.Close()
+
+	now := time.Now().Unix()
+
+	if _, err := client.Command(ctx, "list"); err != nil {
+		msg := "RCON connection failed: " + err.Error()
+		s.setRCONError(id, msg)
+		s.updateStatus(id, func(status *ConnectorStatus) {
+			status.State = "error"
+			status.Message = msg
+			status.LastPollUnix = now
+			status.LastErrorUnix = now
+			status.LastError = err.Error()
+		})
+		return err
+	}
+
+	s.setRCONError(id, "")
+	s.updateStatus(id, func(status *ConnectorStatus) {
+		status.State = "ok"
+		status.Message = "health check passed"
+		status.LastPollUnix = now
+		status.LastSuccessUnix = now
+		status.LastError = ""
+	})
+	return nil
 }
 
 func instanceID(instance config.MinecraftInstanceConfig) string {

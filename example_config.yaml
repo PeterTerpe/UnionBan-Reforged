@@ -19,6 +19,10 @@ p2p:
 
 minecraft:
   enabled: true
+
+  log_poll_interval_seconds: 1  # fallback when per-instance log.poll_interval_seconds is 0
+  banned_players_poll_interval_seconds: 60  # fallback when per-instance rcon.poll_interval_seconds is 0
+
   default_policy:
     kick_message: "You have been kicked because this server is using MeshBan and you satisfied this server's kick policy: {policy_met}.
                   If you believe this is a mistake, you can contact the server's admin at {support_contact}"
