@@ -265,8 +265,10 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 	})
 	s.logger.Info("starting Minecraft monitor", "instance", instanceID, "address", address, "log_path", tailer.path, "log_interval", logInterval.String(), "ban_poll_interval", banPollInterval.String())
 
-	s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
-	s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, client, resolver, policy, recentPlayers, knownServerBans)
+	lastRCONError := ""
+
+	s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers, &lastRCONError)
+	s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, client, resolver, policy, recentPlayers, knownServerBans, &lastRCONError)
 
 	logTicker := time.NewTicker(logInterval)
 	defer logTicker.Stop()
@@ -284,14 +286,14 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 			s.logger.Info("stopping Minecraft monitor", "instance", instanceID)
 			return
 		case <-logTicker.C:
-			s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
+			s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers, &lastRCONError)
 		case <-banTicker.C:
-			s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, client, resolver, policy, recentPlayers, knownServerBans)
+			s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, client, resolver, policy, recentPlayers, knownServerBans, &lastRCONError)
 		}
 	}
 }
 
-func (s *Service) readJoinLog(ctx context.Context, instanceID string, tailer *logTailer, client *RCONClient, resolver *UUIDResolver, policy resolvedPolicy, logUUIDs map[string]Player, recentPlayers map[string]Player, onlinePlayers map[string]Player) {
+func (s *Service) readJoinLog(ctx context.Context, instanceID string, tailer *logTailer, client *RCONClient, resolver *UUIDResolver, policy resolvedPolicy, logUUIDs map[string]Player, recentPlayers map[string]Player, onlinePlayers map[string]Player, lastRCONError *string) {
 	lines, err := tailer.ReadNewLines()
 	now := time.Now().Unix()
 	if err != nil {
@@ -310,13 +312,24 @@ func (s *Service) readJoinLog(ctx context.Context, instanceID string, tailer *lo
 		s.processLogLine(ctx, instanceID, line, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
 	}
 
+	state := "ok"
+	message := "log tail active"
+	if *lastRCONError != "" {
+		state = "error"
+		message = *lastRCONError
+	}
+
 	s.updateStatus(instanceID, func(status *ConnectorStatus) {
-		status.State = "ok"
-		status.Message = "log tail active"
+		status.State = state
+		status.Message = message
 		status.OnlinePlayers = len(onlinePlayers)
 		status.LastPollUnix = now
 		status.LastSuccessUnix = now
-		status.LastError = ""
+		if *lastRCONError != "" {
+			status.LastError = *lastRCONError
+		} else {
+			status.LastError = ""
+		}
 	})
 }
 
@@ -406,12 +419,23 @@ func (s *Service) handleJoinedPlayer(ctx context.Context, instanceID string, cli
 	s.logger.Warn("kicked Minecraft player", "instance", instanceID, "player", player.Name, "uuid", player.UUID, "policy", decision.PolicyMet, "cached", decision.FromCache)
 }
 
-func (s *Service) importServerBans(ctx context.Context, instanceID string, bannedPlayersPath string, client *RCONClient, resolver *UUIDResolver, policy resolvedPolicy, recentPlayers map[string]Player, knownServerBans map[string]bool) {
+func (s *Service) importServerBans(ctx context.Context, instanceID string, bannedPlayersPath string, client *RCONClient, resolver *UUIDResolver, policy resolvedPolicy, recentPlayers map[string]Player, knownServerBans map[string]bool, lastRCONError *string) {
 	response, err := client.Command(ctx, "banlist players")
+	now := time.Now().Unix()
 	if err != nil {
+		*lastRCONError = "RCON connection failed: " + err.Error()
+		s.updateStatus(instanceID, func(status *ConnectorStatus) {
+			status.State = "error"
+			status.Message = *lastRCONError
+			status.LastPollUnix = now
+			status.LastErrorUnix = now
+			status.LastError = err.Error()
+		})
 		s.logger.Warn("failed to query server ban list over RCON", "instance", instanceID, "error", err)
 		return
 	}
+
+	*lastRCONError = ""
 
 	bannedPlayers, err := loadBannedPlayersFile(bannedPlayersPath)
 	if err != nil {
@@ -448,6 +472,14 @@ func (s *Service) importServerBans(ctx context.Context, instanceID string, banne
 			delete(knownServerBans, knownName)
 		}
 	}
+
+	s.updateStatus(instanceID, func(status *ConnectorStatus) {
+		status.State = "ok"
+		status.Message = "monitor active"
+		status.LastPollUnix = now
+		status.LastSuccessUnix = now
+		status.LastError = ""
+	})
 }
 
 func (s *Service) resolveServerBanPlayer(ctx context.Context, instanceID string, client *RCONClient, resolver *UUIDResolver, serverBan ServerBan, recentPlayers map[string]Player) (Player, bool) {
