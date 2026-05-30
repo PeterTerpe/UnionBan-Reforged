@@ -105,7 +105,6 @@ CREATE TABLE IF NOT EXISTS player_decision_cache (
     reason TEXT NOT NULL DEFAULT '',
     policy_met TEXT NOT NULL DEFAULT '',
     banlist_version TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (server_id, player_uuid)
 );

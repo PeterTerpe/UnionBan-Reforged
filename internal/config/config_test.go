@@ -29,8 +29,8 @@ func TestLoadExampleConfigIncludesMinecraftRCON(t *testing.T) {
 		t.Fatalf("password env = %q, want SURVIVAL_RCON_PASS", instance.RCON.PasswordEnv)
 	}
 
-	if instance.RCON.PollIntervalSeconds != 60 {
-		t.Fatalf("RCON poll interval = %d, want 60", instance.RCON.PollIntervalSeconds)
+	if instance.RCON.PollIntervalSeconds != nil && *instance.RCON.PollIntervalSeconds != 60 {
+		t.Fatalf("RCON poll interval = %v, want nil or 60", instance.RCON.PollIntervalSeconds)
 	}
 
 	if instance.Log.Path != "/home/minecraft/survival/logs/latest.log" {

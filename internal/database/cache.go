@@ -2,7 +2,9 @@ package database
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,7 +24,6 @@ type PlayerDecisionCacheEntry struct {
 	Reason         string
 	PolicyMet      string
 	BanlistVersion string
-	CreatedAt      int64
 	UpdatedAt      int64
 }
 
@@ -53,7 +54,7 @@ func (d *Database) GetPlayerDecisionCache(ctx context.Context, serverID string, 
 	var entry PlayerDecisionCacheEntry
 
 	err := d.db.QueryRowContext(ctx, `
-		SELECT server_id, player_uuid, player_name, decision, reason, policy_met, banlist_version, created_at, updated_at
+		SELECT server_id, player_uuid, player_name, decision, reason, policy_met, banlist_version, updated_at
 		FROM player_decision_cache
 		WHERE server_id = ?
 			AND player_uuid = ?
@@ -66,7 +67,6 @@ func (d *Database) GetPlayerDecisionCache(ctx context.Context, serverID string, 
 		&entry.Reason,
 		&entry.PolicyMet,
 		&entry.BanlistVersion,
-		&entry.CreatedAt,
 		&entry.UpdatedAt,
 	)
 	if err != nil {
@@ -83,12 +83,7 @@ func (d *Database) SavePlayerDecisionCache(ctx context.Context, entry PlayerDeci
 		return err
 	}
 
-	now := time.Now().Unix()
-	if entry.CreatedAt == 0 {
-		entry.CreatedAt = now
-	}
-
-	entry.UpdatedAt = now
+	entry.UpdatedAt = time.Now().Unix()
 
 	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO player_decision_cache (
@@ -99,10 +94,9 @@ func (d *Database) SavePlayerDecisionCache(ctx context.Context, entry PlayerDeci
 			reason,
 			policy_met,
 			banlist_version,
-			created_at,
 			updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(server_id, player_uuid) DO UPDATE SET
 			player_name = excluded.player_name,
 			decision = excluded.decision,
@@ -118,7 +112,6 @@ func (d *Database) SavePlayerDecisionCache(ctx context.Context, entry PlayerDeci
 		entry.Reason,
 		entry.PolicyMet,
 		entry.BanlistVersion,
-		entry.CreatedAt,
 		entry.UpdatedAt,
 	)
 
@@ -180,10 +173,80 @@ func (d *Database) DeletePlayerDecisionCache(ctx context.Context, serverID strin
 	return err
 }
 
+// ClearServerPlayerDecisionCache removes all cached decisions for a specific
+// server.  It is called when the server's policy changes so stale decisions
+// are not reused.
+func (d *Database) ClearServerPlayerDecisionCache(ctx context.Context, serverID string) error {
+	serverID = strings.TrimSpace(serverID)
+	if serverID == "" {
+		return nil
+	}
+
+	_, err := d.db.ExecContext(ctx, `
+		DELETE FROM player_decision_cache
+		WHERE server_id = ?
+		`, serverID)
+
+	return err
+}
+
 // ClearAllPlayerDecisionCache removes every entry from the player decision
 // cache table. It is intended for manual use via the WebUI to force all cached
 // decisions to be recomputed on the next player join.
 func (d *Database) ClearAllPlayerDecisionCache(ctx context.Context) error {
 	_, err := d.db.ExecContext(ctx, `DELETE FROM player_decision_cache`)
 	return err
+}
+
+// PolicyHashKey returns the metadata key used to store a server's policy hash.
+func PolicyHashKey(serverID string) string {
+	return "policy_hash:" + strings.TrimSpace(serverID)
+}
+
+// GetPolicyHash returns the stored policy hash for a server, or an empty
+// string if none has been recorded.
+func (d *Database) GetPolicyHash(ctx context.Context, serverID string) (string, error) {
+	var value string
+	err := d.db.QueryRowContext(ctx, `
+		SELECT value FROM metadata WHERE key = ?
+		`, PolicyHashKey(serverID)).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// SetPolicyHash stores a new policy hash for a server.
+func (d *Database) SetPolicyHash(ctx context.Context, serverID string, hash string) error {
+	_, err := d.db.ExecContext(ctx, `
+		INSERT INTO metadata (key, value)
+		VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET
+			value = excluded.value
+		`, PolicyHashKey(serverID), hash)
+	return err
+}
+
+// HashPolicy computes a deterministic SHA-256 hash of the resolved policy
+// fields (thresholds, kick message, support contact) so the service can detect
+// when a policy has changed and prune the decision cache.
+func HashPolicy(kickMessage string, supportContact string, thresholds map[string]int) string {
+	h := sha256.New()
+	h.Write([]byte(kickMessage))
+	h.Write([]byte{0})
+	h.Write([]byte(supportContact))
+	h.Write([]byte{0})
+
+	// Iterate levels in a fixed order to keep the hash deterministic.
+	for _, level := range []string{"ultimate", "trusted", "friend", "unknown", "untrusted"} {
+		h.Write([]byte(level))
+		h.Write([]byte{0})
+		h.Write([]byte(fmt.Sprintf("%d", thresholds[level])))
+		h.Write([]byte{0})
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
 }

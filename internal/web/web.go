@@ -65,10 +65,15 @@ type MinecraftPolicyFormData struct {
 	KickReason     string
 	SupportContact string
 	Ultimate       int
+	UltimateSet    bool
 	Trusted        int
+	TrustedSet     bool
 	Friend         int
+	FriendSet      bool
 	Unknown        int
+	UnknownSet     bool
 	Untrusted      int
+	UntrustedSet   bool
 }
 
 type MinecraftUUIDResolverFormData struct {
@@ -86,24 +91,29 @@ type MinecraftUUIDResolverFormData struct {
 }
 
 type MinecraftInstanceFormData struct {
-	Index                     int
-	ID                        string
-	Enabled                   bool
-	Mode                      string
-	RCONHost                  string
-	RCONPort                  int
-	RCONPasswordEnv           string
-	RCONPollInterval          int
-	RCONCommandTimeout        int
-	LogPath                   string
-	LogPollInterval           int
-	BannedPlayersPollInterval int
-	BannedPlayersPath         string
-	HasRCONPassword           bool
-	Policy                    MinecraftPolicyFormData
-	UUIDResolver              MinecraftUUIDResolverFormData
-	Status                    *minecraft.ConnectorStatus
-	LogLines                  []string
+	Index                            int
+	ID                               string
+	Enabled                          bool
+	Mode                             string
+	RCONHost                         string
+	RCONPort                         int
+	RCONPasswordEnv                  string
+	RCONPollInterval                 int
+	RCONCommandTimeout               int
+	LogPath                          string
+	LogPollInterval                  int
+	LogPollIntervalSet               bool
+	BannedPlayersPollInterval        int
+	BannedPlayersPollIntervalSet     bool
+	BannedPlayersPath                string
+	HasRCONPassword                  bool
+	Policy                           MinecraftPolicyFormData
+	PolicyDefaults                   MinecraftPolicyFormData
+	DefaultLogPollInterval           int
+	DefaultBannedPlayersPollInterval int
+	UUIDResolver                     MinecraftUUIDResolverFormData
+	Status                           *minecraft.ConnectorStatus
+	LogLines                         []string
 }
 
 type PageData struct {
@@ -355,12 +365,9 @@ func (h *Handler) minecraftDoAdd(w http.ResponseWriter) {
 			Host:                  "127.0.0.1",
 			Port:                  25575,
 			PasswordEnv:           strings.ToUpper(strings.ReplaceAll(nextID, "-", "_")) + "_RCON_PASS",
-			PollIntervalSeconds:   60,
 			CommandTimeoutSeconds: 3,
 		},
-		Log: config.MinecraftLogConfig{
-			PollIntervalSeconds: 1,
-		},
+		Log: config.MinecraftLogConfig{},
 	})
 
 	config.ApplyDefaults(h.config)
@@ -469,24 +476,29 @@ func (h *Handler) minecraftInstanceFormData(statuses []minecraft.ConnectorStatus
 		}
 
 		instances = append(instances, MinecraftInstanceFormData{
-			Index:                     i,
-			ID:                        instance.ID,
-			Enabled:                   instance.Enabled,
-			Mode:                      firstNonEmpty(instance.Mode, "rcon"),
-			RCONHost:                  firstNonEmpty(instance.RCON.Host, "127.0.0.1"),
-			RCONPort:                  intOrDefault(instance.RCON.Port, 25575),
-			RCONPasswordEnv:           instance.RCON.PasswordEnv,
-			RCONPollInterval:          intOrDefault(instance.RCON.PollIntervalSeconds, 60),
-			RCONCommandTimeout:        intOrDefault(instance.RCON.CommandTimeoutSeconds, 3),
-			LogPath:                   instance.Log.Path,
-			LogPollInterval:           intOrDefault(instance.Log.PollIntervalSeconds, 1),
-			BannedPlayersPollInterval: intOrDefault(instance.RCON.PollIntervalSeconds, 60),
-			BannedPlayersPath:         instance.BannedPlayersPath,
-			HasRCONPassword:           hasPassword,
-			Policy:                    minecraftPolicyFormData(instance.Policy),
-			UUIDResolver:              minecraftResolverFormData(instance.UUIDResolver),
-			Status:                    statusPtr,
-			LogLines:                  minecraftLogLinesForInstance(logLines, instanceID),
+			Index:                            i,
+			ID:                               instance.ID,
+			Enabled:                          instance.Enabled,
+			Mode:                             firstNonEmpty(instance.Mode, "rcon"),
+			RCONHost:                         firstNonEmpty(instance.RCON.Host, "127.0.0.1"),
+			RCONPort:                         intOrDefault(instance.RCON.Port, 25575),
+			RCONPasswordEnv:                  instance.RCON.PasswordEnv,
+			RCONPollInterval:                 intPtrVal(instance.RCON.PollIntervalSeconds),
+			RCONCommandTimeout:               intOrDefault(instance.RCON.CommandTimeoutSeconds, 3),
+			LogPath:                          instance.Log.Path,
+			LogPollInterval:                  intPtrVal(instance.Log.PollIntervalSeconds),
+			LogPollIntervalSet:               instance.Log.PollIntervalSeconds != nil,
+			BannedPlayersPollInterval:        intPtrVal(instance.RCON.PollIntervalSeconds),
+			BannedPlayersPollIntervalSet:     instance.RCON.PollIntervalSeconds != nil,
+			BannedPlayersPath:                instance.BannedPlayersPath,
+			HasRCONPassword:                  hasPassword,
+			Policy:                           minecraftPolicyFormData(instance.Policy),
+			PolicyDefaults:                   minecraftPolicyFormData(h.config.Minecraft.DefaultPolicy),
+			DefaultLogPollInterval:           intOrDefault(h.config.Minecraft.LogPollIntervalSeconds, 1),
+			DefaultBannedPlayersPollInterval: intOrDefault(h.config.Minecraft.BannedPlayersPollIntervalSeconds, 60),
+			UUIDResolver:                     minecraftResolverFormData(instance.UUIDResolver),
+			Status:                           statusPtr,
+			LogLines:                         minecraftLogLinesForInstance(logLines, instanceID),
 		})
 	}
 
@@ -533,20 +545,13 @@ func (h *Handler) parseMinecraftConfigForm(r *http.Request) (config.MinecraftCon
 			return config.MinecraftConfig{}, errors.New("RCON port must be at most 65535")
 		}
 
-		pollInterval, err := parsePositiveIntForm(r, prefix+"_banned_players_poll_interval", "Banned players poll interval")
-		if err != nil {
-			return config.MinecraftConfig{}, err
-		}
-
+		pollInterval := parseOptionalPositiveIntForm(r, prefix+"_banned_players_poll_interval")
 		commandTimeout, err := parsePositiveIntForm(r, prefix+"_rcon_command_timeout", "RCON command timeout")
 		if err != nil {
 			return config.MinecraftConfig{}, err
 		}
 
-		logPollInterval, err := parsePositiveIntForm(r, prefix+"_log_poll_interval", "Log scan interval")
-		if err != nil {
-			return config.MinecraftConfig{}, err
-		}
+		logPollInterval := parseOptionalPositiveIntForm(r, prefix+"_log_poll_interval")
 
 		passwordEnv := strings.TrimSpace(r.FormValue(prefix + "_rcon_password_env"))
 		password := strings.TrimSpace(r.FormValue(prefix + "_rcon_password"))
@@ -600,11 +605,11 @@ func parseMinecraftPolicyForm(r *http.Request, prefix string) config.MinecraftPo
 		KickMessage:    strings.TrimSpace(r.FormValue(prefix + "_kick_message")),
 		KickReason:     strings.TrimSpace(r.FormValue(prefix + "_kick_reason")),
 		SupportContact: strings.TrimSpace(r.FormValue(prefix + "_support_contact")),
-		Ultimate:       intPtr(parseNonNegativeIntValue(r.FormValue(prefix + "_ultimate"))),
-		Trusted:        intPtr(parseNonNegativeIntValue(r.FormValue(prefix + "_trusted"))),
-		Friend:         intPtr(parseNonNegativeIntValue(r.FormValue(prefix + "_friend"))),
-		Unknown:        intPtr(parseNonNegativeIntValue(r.FormValue(prefix + "_unknown"))),
-		Untrusted:      intPtr(parseNonNegativeIntValue(r.FormValue(prefix + "_untrusted"))),
+		Ultimate:       parseOptionalIntForm(r, prefix+"_ultimate"),
+		Trusted:        parseOptionalIntForm(r, prefix+"_trusted"),
+		Friend:         parseOptionalIntForm(r, prefix+"_friend"),
+		Unknown:        parseOptionalIntForm(r, prefix+"_unknown"),
+		Untrusted:      parseOptionalIntForm(r, prefix+"_untrusted"),
 	}
 }
 
@@ -629,11 +634,16 @@ func minecraftPolicyFormData(policy config.MinecraftPolicyConfig) MinecraftPolic
 		KickMessage:    policy.KickMessage,
 		KickReason:     policy.KickReason,
 		SupportContact: policy.SupportContact,
-		Ultimate:       intPtrValue(policy.Ultimate, 1),
-		Trusted:        intPtrValue(policy.Trusted, 2),
-		Friend:         intPtrValue(policy.Friend, 5),
-		Unknown:        intPtrValue(policy.Unknown, 20),
-		Untrusted:      intPtrValue(policy.Untrusted, 0),
+		Ultimate:       intPtrVal(policy.Ultimate),
+		UltimateSet:    policy.Ultimate != nil,
+		Trusted:        intPtrVal(policy.Trusted),
+		TrustedSet:     policy.Trusted != nil,
+		Friend:         intPtrVal(policy.Friend),
+		FriendSet:      policy.Friend != nil,
+		Unknown:        intPtrVal(policy.Unknown),
+		UnknownSet:     policy.Unknown != nil,
+		Untrusted:      intPtrVal(policy.Untrusted),
+		UntrustedSet:   policy.Untrusted != nil,
 	}
 }
 
@@ -671,12 +681,53 @@ func parseNonNegativeIntValue(value string) int {
 	return parsed
 }
 
+// parseOptionalIntForm returns an *int from a form field.  An empty or
+// whitespace-only value produces nil (meaning "use default").  Otherwise
+// the value is parsed as a non-negative integer (0 is allowed).
+func parseOptionalIntForm(r *http.Request, name string) *int {
+	raw := strings.TrimSpace(r.FormValue(name))
+	if raw == "" {
+		return nil
+	}
+
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed < 0 {
+		return nil
+	}
+
+	return intPtr(parsed)
+}
+
+// parseOptionalPositiveIntForm returns an *int from a form field.  An empty
+// or whitespace-only value produces nil (meaning "use default").  Otherwise
+// the value must be a positive integer (> 0).
+func parseOptionalPositiveIntForm(r *http.Request, name string) *int {
+	raw := strings.TrimSpace(r.FormValue(name))
+	if raw == "" {
+		return nil
+	}
+
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return nil
+	}
+
+	return intPtr(parsed)
+}
+
 func intPtr(value int) *int {
 	return &value
 }
 
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+func intPtrVal(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func intPtrValue(value *int, fallback int) int {

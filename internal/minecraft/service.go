@@ -229,7 +229,7 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 		commandTimeout = 3 * time.Second
 	}
 
-	banPollInterval := time.Duration(instance.RCON.PollIntervalSeconds) * time.Second
+	banPollInterval := time.Duration(ptrVal(instance.RCON.PollIntervalSeconds)) * time.Second
 	if banPollInterval <= 0 {
 		banPollInterval = time.Duration(cfg.BannedPlayersPollIntervalSeconds) * time.Second
 	}
@@ -237,7 +237,7 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 		banPollInterval = 60 * time.Second
 	}
 
-	logInterval := time.Duration(instance.Log.PollIntervalSeconds) * time.Second
+	logInterval := time.Duration(ptrVal(instance.Log.PollIntervalSeconds)) * time.Second
 	if logInterval <= 0 {
 		logInterval = time.Duration(cfg.LogPollIntervalSeconds) * time.Second
 	}
@@ -261,6 +261,29 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 	defer client.Close()
 
 	policy := s.resolvePolicy(cfg.DefaultPolicy, instance.Policy)
+
+	// Detect policy changes by comparing a hash stored in the database.
+	// When the policy changes, clear all cached decisions for this server
+	// so players are re-evaluated against the new thresholds immediately.
+	policyHash := database.HashPolicy(policy.kickMessage, policy.supportContact, policy.thresholds)
+	if storedHash, err := s.database.GetPolicyHash(ctx, instanceID); err == nil && storedHash != "" {
+		if storedHash != policyHash {
+			if err := s.database.ClearServerPlayerDecisionCache(ctx, instanceID); err != nil {
+				s.logger.Warn("failed to clear decision cache after policy change", "instance", instanceID, "error", err)
+			} else {
+				s.logger.Info("cleared decision cache due to policy change", "instance", instanceID)
+			}
+			if err := s.database.SetPolicyHash(ctx, instanceID, policyHash); err != nil {
+				s.logger.Warn("failed to store policy hash", "instance", instanceID, "error", err)
+			}
+		}
+	} else {
+		// First run: store the initial hash so future changes are detected.
+		if err := s.database.SetPolicyHash(ctx, instanceID, policyHash); err != nil {
+			s.logger.Warn("failed to store initial policy hash", "instance", instanceID, "error", err)
+		}
+	}
+
 	resolverConfig := mergeUUIDResolverConfig(cfg.UUIDResolver, instance.UUIDResolver)
 	resolver := NewUUIDResolver(resolverConfig, s.secretManager, s.logger)
 	recentPlayers := make(map[string]Player)
@@ -917,6 +940,13 @@ func thresholdValue(override *int, base *int, fallback int) int {
 	}
 
 	return fallback
+}
+
+func ptrVal(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 func firstNonEmpty(values ...string) string {

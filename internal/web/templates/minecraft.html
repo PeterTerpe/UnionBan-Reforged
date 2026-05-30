@@ -207,7 +207,7 @@
                         </div>
                         <div>
                             <label>Banned Players Poll Interval Seconds</label>
-                            <input class="input" type="number" min="1" name="instance_{{.Index}}_banned_players_poll_interval" value="{{.BannedPlayersPollInterval}}">
+                            <input class="input" type="number" min="1" name="instance_{{.Index}}_banned_players_poll_interval" value="{{if .BannedPlayersPollIntervalSet}}{{.BannedPlayersPollInterval}}{{end}}" placeholder="{{.DefaultBannedPlayersPollInterval}}">
                         </div>
                         <div>
                             <label>Command Timeout Seconds</label>
@@ -219,7 +219,7 @@
                         </div>
                         <div>
                             <label>Log Scan Interval Seconds</label>
-                            <input class="input" type="number" min="1" name="instance_{{.Index}}_log_poll_interval" value="{{.LogPollInterval}}">
+                            <input class="input" type="number" min="1" name="instance_{{.Index}}_log_poll_interval" value="{{if .LogPollIntervalSet}}{{.LogPollInterval}}{{end}}" placeholder="{{.DefaultLogPollInterval}}">
                         </div>
                         <div>
                             <label>Banned Players JSON Path</label>
@@ -235,7 +235,7 @@
                     <hr>
 
                     <label>Kick Message Override</label>
-                    <textarea class="large-textarea" name="instance_{{.Index}}_kick_message">{{.Policy.KickMessage}}</textarea>
+                    <textarea class="large-textarea" name="instance_{{.Index}}_kick_message" placeholder="{{$.MinecraftPolicy.KickMessage}}">{{.Policy.KickMessage}}</textarea>
 
                     <label>Kick Reason Override</label>
                     <input class="input wide-input" name="instance_{{.Index}}_kick_reason" value="{{.Policy.KickReason}}">
@@ -246,23 +246,23 @@
                     <div class="field-grid">
                         <div>
                             <label>Ultimate</label>
-                            <input class="input" type="number" min="0" name="instance_{{.Index}}_ultimate" value="{{.Policy.Ultimate}}">
+                            <input class="input" type="number" min="0" name="instance_{{.Index}}_ultimate" value="{{if .Policy.UltimateSet}}{{.Policy.Ultimate}}{{end}}" placeholder="{{.PolicyDefaults.Ultimate}}">
                         </div>
                         <div>
                             <label>Trusted</label>
-                            <input class="input" type="number" min="0" name="instance_{{.Index}}_trusted" value="{{.Policy.Trusted}}">
+                            <input class="input" type="number" min="0" name="instance_{{.Index}}_trusted" value="{{if .Policy.TrustedSet}}{{.Policy.Trusted}}{{end}}" placeholder="{{.PolicyDefaults.Trusted}}">
                         </div>
                         <div>
                             <label>Friend</label>
-                            <input class="input" type="number" min="0" name="instance_{{.Index}}_friend" value="{{.Policy.Friend}}">
+                            <input class="input" type="number" min="0" name="instance_{{.Index}}_friend" value="{{if .Policy.FriendSet}}{{.Policy.Friend}}{{end}}" placeholder="{{.PolicyDefaults.Friend}}">
                         </div>
                         <div>
                             <label>Unknown</label>
-                            <input class="input" type="number" min="0" name="instance_{{.Index}}_unknown" value="{{.Policy.Unknown}}">
+                            <input class="input" type="number" min="0" name="instance_{{.Index}}_unknown" value="{{if .Policy.UnknownSet}}{{.Policy.Unknown}}{{end}}" placeholder="{{.PolicyDefaults.Unknown}}">
                         </div>
                         <div>
                             <label>Untrusted</label>
-                            <input class="input" type="number" min="0" name="instance_{{.Index}}_untrusted" value="{{.Policy.Untrusted}}">
+                            <input class="input" type="number" min="0" name="instance_{{.Index}}_untrusted" value="{{if .Policy.UntrustedSet}}{{.Policy.Untrusted}}{{end}}" placeholder="{{.PolicyDefaults.Untrusted}}">
                         </div>
                     </div>
 

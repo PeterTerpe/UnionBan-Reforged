@@ -100,13 +100,13 @@ type MinecraftRCONConfig struct {
 	Host                  string `yaml:"host"`
 	Port                  int    `yaml:"port"`
 	PasswordEnv           string `yaml:"password_env"`
-	PollIntervalSeconds   int    `yaml:"poll_interval_seconds"`
+	PollIntervalSeconds   *int   `yaml:"poll_interval_seconds,omitempty"`
 	CommandTimeoutSeconds int    `yaml:"command_timeout_seconds"`
 }
 
 type MinecraftLogConfig struct {
 	Path                string `yaml:"path,omitempty"`
-	PollIntervalSeconds int    `yaml:"poll_interval_seconds,omitempty"`
+	PollIntervalSeconds *int   `yaml:"poll_interval_seconds,omitempty"`
 }
 
 func LoadOrCreate(path string, examplePath string) (*Config, error) {
@@ -220,17 +220,12 @@ func applyMinecraftDefaults(cfg *MinecraftConfig) {
 			instance.RCON.Port = 25575
 		}
 
-		if instance.RCON.PollIntervalSeconds <= 0 {
-			instance.RCON.PollIntervalSeconds = 60
-		}
-
 		if instance.RCON.CommandTimeoutSeconds <= 0 {
 			instance.RCON.CommandTimeoutSeconds = 3
 		}
 
-		if instance.Log.PollIntervalSeconds <= 0 {
-			instance.Log.PollIntervalSeconds = 1
-		}
+		// Per-instance poll intervals are left nil by default so they
+		// inherit the global defaults at runtime.
 	}
 }
 
