@@ -289,7 +289,3 @@ func applyMinecraftUUIDResolverDefaults(resolver *MinecraftUUIDResolverConfig) {
 func intPtr(value int) *int {
 	return &value
 }
-
-func boolPtr(value bool) *bool {
-	return &value
-}
