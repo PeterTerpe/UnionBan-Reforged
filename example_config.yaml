@@ -46,33 +46,33 @@ minecraft:
     proxy_pass_env: "PROXY_PASSWORD"
 
   instances:
-    - id: "survival"
-      enabled: true
-      mode: "rcon"
+    # - id: "survival"
+    #   enabled: true
+    #   mode: "rcon"
 
-      rcon:
-        host: "127.0.0.1"
-        port: 25575
-        password_env: "SURVIVAL_RCON_PASS"
-        poll_interval_seconds: 60
-        command_timeout_seconds: 3
+    #   rcon:
+    #     host: "127.0.0.1"
+    #     port: 25575
+    #     password_env: "SURVIVAL_RCON_PASS"
+    #     poll_interval_seconds: 60
+    #     command_timeout_seconds: 3
 
-      log:
-        path: "/home/minecraft/survival/logs/latest.log"
-        poll_interval_seconds: 1
+    #   log:
+    #     path: "/home/minecraft/survival/logs/latest.log"
+    #     poll_interval_seconds: 1
 
-      banned_players_path: "/home/minecraft/survival/banned-players.json"
+    #   banned_players_path: "/home/minecraft/survival/banned-players.json"
 
-      policy:
-        kick_reason: "You are not allowed to join this server."
+    #   policy:
+    #     kick_reason: "You are not allowed to join this server."
 
-    - id: "modded"
-      enabled: false
-      mode: "paper_adapter"
-      paper_adapter: "paper"
-      adapter_token_env: "MODDED_SERVER_TOEKN"
-      policy:  # override default_policy
-        unknown: 100
-        support_contact: "MODDED_SUPPORT_CONTACT"
-      uuid_resolver:  # override default uuid_resolver settings
-        enabled: true  # use internal UUID lookup instead of relying on rcon/adapter
+    # - id: "modded"
+    #   enabled: false
+    #   mode: "paper_adapter"
+    #   paper_adapter: "paper"
+    #   adapter_token_env: "MODDED_SERVER_TOEKN"
+    #   policy:  # override default_policy
+    #     unknown: 100
+    #     support_contact: "MODDED_SUPPORT_CONTACT"
+    #   uuid_resolver:  # override default uuid_resolver settings
+    #     enabled: true  # use internal UUID lookup instead of relying on rcon/adapter

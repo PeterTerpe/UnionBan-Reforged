@@ -58,7 +58,7 @@ type Handler struct {
 	logger          *slog.Logger
 	logBuffer       *logs.Buffer
 	minecraft       *minecraft.Service
-	nodeClient       *nodesclient.Client
+	nodeClient      *nodesclient.Client
 	loginLimiter    *auth.LoginLimiter
 	templateCache   map[string]*template.Template
 }
@@ -163,7 +163,7 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 		logger:          options.Logger,
 		logBuffer:       options.LogBuffer,
 		minecraft:       options.Minecraft,
-		nodeClient:       options.NodeClient,
+		nodeClient:      options.NodeClient,
 		loginLimiter:    auth.NewLoginLimiter(5, 10*time.Minute, 15*time.Minute),
 		templateCache:   make(map[string]*template.Template),
 	}
