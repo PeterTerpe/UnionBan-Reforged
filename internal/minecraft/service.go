@@ -14,6 +14,7 @@ import (
 	"github.com/PeterTerpe/MeshBan/internal/config"
 	"github.com/PeterTerpe/MeshBan/internal/database"
 	"github.com/PeterTerpe/MeshBan/internal/identity"
+	"github.com/PeterTerpe/MeshBan/internal/nodes"
 	"github.com/PeterTerpe/MeshBan/internal/secrets"
 )
 
@@ -29,6 +30,7 @@ type Options struct {
 	Config          config.MinecraftConfig
 	Database        *database.Database
 	IdentityService *identity.Service
+	NodeClient      *nodes.Client
 	SecretManager   *secrets.Manager
 	LocalNodeID     string
 	Logger          *slog.Logger
@@ -38,6 +40,7 @@ type Service struct {
 	config          config.MinecraftConfig
 	database        *database.Database
 	identityService *identity.Service
+	nodeClient      *nodes.Client
 	secretManager   *secrets.Manager
 	localNodeID     string
 	logger          *slog.Logger
@@ -97,6 +100,7 @@ func NewService(options Options) *Service {
 		config:          options.Config,
 		database:        options.Database,
 		identityService: options.IdentityService,
+		nodeClient:      options.NodeClient,
 		secretManager:   options.SecretManager,
 		localNodeID:     strings.TrimSpace(options.LocalNodeID),
 		logger:          logger,
@@ -873,6 +877,43 @@ func (s *Service) decidePlayer(ctx context.Context, instanceID string, playerNam
 
 	decision := s.evaluateBanEntries(entries, policy)
 
+	// If the local banlist already triggers a kick, cache and return
+	// immediately — no need to query peer nodes.
+	if decision.Decision == database.PlayerDecisionKick {
+		if err := s.database.SavePlayerDecisionCache(ctx, database.PlayerDecisionCacheEntry{
+			ServerID:       instanceID,
+			PlayerUUID:     playerUUID,
+			PlayerName:     playerName,
+			Decision:       decision.Decision,
+			Reason:         decision.Reason,
+			PolicyMet:      decision.PolicyMet,
+			BanlistVersion: banlistVersion,
+		}); err != nil {
+			return playerDecision{}, err
+		}
+		return decision, nil
+	}
+
+	// Local banlist does not trigger a kick.  Query all known peer nodes
+	// for additional ban entries, store valid ones locally, then re-evaluate.
+	peerEntries, err := s.queryPeerNodesForPlayer(ctx, playerUUID)
+	if err != nil {
+		s.logger.Warn("peer node query failed, proceeding with local-only decision",
+			"player_uuid", playerUUID,
+			"error", err,
+		)
+	}
+
+	// If we got any entries from peers, re-read the local banlist and
+	// recompute the decision.
+	if len(peerEntries) > 0 {
+		entries, err = s.database.ListBanEntriesByPlayerUUID(ctx, playerUUID)
+		if err != nil {
+			return playerDecision{}, err
+		}
+		decision = s.evaluateBanEntries(entries, policy)
+	}
+
 	if err := s.database.SavePlayerDecisionCache(ctx, database.PlayerDecisionCacheEntry{
 		ServerID:       instanceID,
 		PlayerUUID:     playerUUID,
@@ -886,6 +927,102 @@ func (s *Service) decidePlayer(ctx context.Context, instanceID string, playerNam
 	}
 
 	return decision, nil
+}
+
+// queryPeerNodesForPlayer fetches banlist entries for a player UUID from all
+// known peer nodes, stores valid entries in the local database, and returns
+// the new entries that were added.
+func (s *Service) queryPeerNodesForPlayer(ctx context.Context, playerUUID string) ([]database.BanEntry, error) {
+	if s.nodeClient == nil {
+		return nil, nil
+	}
+
+	allNodes, err := s.database.ListNodes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list peer nodes: %w", err)
+	}
+
+	if len(allNodes) == 0 {
+		return nil, nil
+	}
+
+	// Give node queries a bounded amount of time so a slow / unreachable
+	// peer doesn't stall the join-handling path indefinitely.
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	results := s.nodeClient.QueryAllNodes(queryCtx, playerUUID, allNodes) // entries already verified in queryNode()
+
+	var newEntries []database.BanEntry
+	now := time.Now().Unix()
+
+	for _, result := range results {
+		if result.Error != nil {
+			s.logger.Debug("peer node query failed",
+				"remote_node", result.NodeID,
+				"error", result.Error,
+			)
+			continue
+		}
+
+		for _, entry := range result.Entries {
+			// Check if we already have this entry (same player, same source
+			// node, and equivalent reason) to avoid duplicates.
+			if s.hasEquivalentBanEntry(ctx, playerUUID, entry.SourceNodeID, entry.Reason) {
+				continue
+			}
+
+			dbEntry := database.BanEntry{
+				PlayerUUID:   playerUUID,
+				PlayerName:   entry.PlayerName,
+				Reason:       entry.Reason,
+				SourceNodeID: entry.SourceNodeID,
+				UUIDSource:   entry.UUIDSource,
+				Signature:    entry.Signature,
+				CreatedAt:    entry.CreatedAt,
+				UpdatedAt:    now,
+			}
+
+			if _, err := s.database.CreateBanEntry(ctx, dbEntry); err != nil {
+				s.logger.Warn("failed to store peer ban entry",
+					"remote_node", result.NodeID,
+					"player_uuid", playerUUID,
+					"error", err,
+				)
+				continue
+			}
+
+			newEntries = append(newEntries, dbEntry)
+		}
+	}
+
+	if len(newEntries) > 0 {
+		s.logger.Info("imported ban entries from peer nodes",
+			"player_uuid", playerUUID,
+			"new_entries", len(newEntries),
+			"nodes_queried", len(allNodes),
+		)
+	}
+
+	return newEntries, nil
+}
+
+// hasEquivalentBanEntry returns true if the local banlist already contains an
+// entry for the same player UUID, source node ID, and reason.
+func (s *Service) hasEquivalentBanEntry(ctx context.Context, playerUUID string, sourceNodeID string, reason string) bool {
+	existing, err := s.database.ListBanEntriesByPlayerUUID(ctx, playerUUID)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range existing {
+		if strings.EqualFold(entry.SourceNodeID, sourceNodeID) &&
+			strings.EqualFold(entry.Reason, reason) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *Service) evaluateBanEntries(entries []database.BanEntry, policy resolvedPolicy) playerDecision {
@@ -925,8 +1062,16 @@ func (s *Service) evaluateBanEntries(entries []database.BanEntry, policy resolve
 
 func (s *Service) trustLevelForBan(entry database.BanEntry) string {
 	sourceNodeID := strings.TrimSpace(entry.SourceNodeID)
-	if sourceNodeID == "" || sourceNodeID == "local" || sourceNodeID == s.localNodeID {
+	if sourceNodeID == s.localNodeID {
 		return trustUltimate
+	}
+
+	// Look up the source node in the nodes table to get its trust level.
+	if s.database != nil {
+		node, err := s.database.GetNode(context.TODO(), sourceNodeID)
+		if err == nil {
+			return node.TrustLevel
+		}
 	}
 
 	return trustUnknown

@@ -18,6 +18,7 @@ import (
 	"github.com/PeterTerpe/MeshBan/internal/identity"
 	"github.com/PeterTerpe/MeshBan/internal/logs"
 	"github.com/PeterTerpe/MeshBan/internal/minecraft"
+	"github.com/PeterTerpe/MeshBan/internal/nodes"
 	"github.com/PeterTerpe/MeshBan/internal/secrets"
 )
 
@@ -128,11 +129,15 @@ func main() {
 	localIdentity := identityService.Current()
 	logger.Info("local identity loaded", "node_id", localIdentity.NodeID)
 
+	// Create the node-to-node API client used for querying peer nodes.
+	nodeClient := nodes.NewClient(logger)
+
 	// Start Minecraft server monitoring in the background.
 	minecraftService := minecraft.NewService(minecraft.Options{
 		Config:          cfg.Minecraft,
 		Database:        db,
 		IdentityService: identityService,
+		NodeClient:      nodeClient,
 		SecretManager:   secretStore,
 		LocalNodeID:     localIdentity.NodeID,
 		Logger:          logger,

@@ -111,6 +111,19 @@ CREATE TABLE IF NOT EXISTS player_decision_cache (
 
 CREATE INDEX IF NOT EXISTS idx_player_decision_cache_updated_at
 ON player_decision_cache(updated_at);
+
+CREATE TABLE IF NOT EXISTS nodes (
+    node_id TEXT PRIMARY KEY,
+    certificate TEXT NOT NULL,
+    public_key TEXT NOT NULL,
+    address TEXT NOT NULL DEFAULT '',
+    ip TEXT NOT NULL DEFAULT '',
+    trust_level TEXT NOT NULL DEFAULT 'unknown',
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_nodes_trust_level
+ON nodes(trust_level);
 `
 
 	if _, err := d.db.ExecContext(ctx, query); err != nil {

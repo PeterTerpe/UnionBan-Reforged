@@ -252,7 +252,7 @@ func wantsHTML(r *http.Request) bool {
 	return strings.Contains(accept, "text/html") || accept == ""
 }
 
-// nodeMethodMiddleware restricts requests to /api/v1/node/* to GET only.
+// nodeMethodMiddleware restricts requests to /api/v1/* to GET only.
 // Non-node paths pass through unchanged.
 func nodeMethodMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

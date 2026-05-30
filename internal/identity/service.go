@@ -219,13 +219,21 @@ func (s *Service) VerifyBanSignature(playerUUID, reason, sourceNodeID, signature
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	pubKeyBytes, err := decodeBase64(s.current.PublicKey)
+	return VerifyBanSignatureWithPublicKey(s.current.PublicKey, playerUUID, reason, sourceNodeID, signature, updatedAt)
+}
+
+// VerifyBanSignatureWithPublicKey checks whether a ban entry's signature is
+// valid against an arbitrary base64-encoded ed25519 public key.  This is used
+// when verifying ban entries received from a remote node whose certificate
+// (and hence public key) was previously stored in the local database.
+func VerifyBanSignatureWithPublicKey(publicKeyBase64 string, playerUUID, reason, sourceNodeID, signature string, updatedAt int64) error {
+	pubKeyBytes, err := decodeBase64(publicKeyBase64)
 	if err != nil {
-		return fmt.Errorf("failed to decode local public key: %w", err)
+		return fmt.Errorf("failed to decode public key: %w", err)
 	}
 
 	if len(pubKeyBytes) != ed25519.PublicKeySize {
-		return fmt.Errorf("local public key has unexpected size %d", len(pubKeyBytes))
+		return fmt.Errorf("public key has unexpected size %d", len(pubKeyBytes))
 	}
 
 	sigBytes, err := decodeBase64(signature)
