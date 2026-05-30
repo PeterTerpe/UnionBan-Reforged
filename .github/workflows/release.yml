@@ -1,9 +1,9 @@
-name: Release
+name: Release Assets
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types:
+      - published
 
 permissions:
   contents: write
@@ -19,28 +19,42 @@ jobs:
           - goos: linux
             goarch: amd64
             output: meshban-linux-amd64
+            archive: tar.gz
+
           - goos: linux
             goarch: arm64
             output: meshban-linux-arm64
+            archive: tar.gz
+
           - goos: windows
             goarch: amd64
             output: meshban-windows-amd64.exe
+            archive: zip
+
           - goos: darwin
             goarch: amd64
             output: meshban-darwin-amd64
+            archive: tar.gz
+
           - goos: darwin
             goarch: arm64
             output: meshban-darwin-arm64
+            archive: tar.gz
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v5
         with:
-          go-version: "1.26.3"
+          go-version-file: go.mod
           cache: true
+
+      - name: Download dependencies
+        run: go mod download
 
       - name: Build binary
         env:
@@ -48,52 +62,34 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: |
-          mkdir -p dist/${{ matrix.output }}
-          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.output }}/${{ matrix.output }} .
-          cp README.md dist/${{ matrix.output }}/
-          cp LICENSE dist/${{ matrix.output }}/
-          cp example_config.yaml dist/${{ matrix.output }}/
+          mkdir -p "dist/${{ matrix.output }}"
+
+          go build -trimpath -ldflags="-s -w" -o "dist/${{ matrix.output }}/${{ matrix.output }}" .
+
+          cp README.md "dist/${{ matrix.output }}/"
+          cp LICENSE "dist/${{ matrix.output }}/"
+          cp example_config.yaml "dist/${{ matrix.output }}/"
 
       - name: Package binary
         run: |
           cd dist
-          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+
+          if [ "${{ matrix.archive }}" = "zip" ]; then
             zip -r "${{ matrix.output }}.zip" "${{ matrix.output }}"
           else
             tar -czf "${{ matrix.output }}.tar.gz" "${{ matrix.output }}"
           fi
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.output }}
-          path: |
-            dist/${{ matrix.output }}.tar.gz
-            dist/${{ matrix.output }}.zip
-          if-no-files-found: ignore
-
-  release:
-    name: Publish GitHub Release
-    needs: build
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v6
-        with:
-          path: release-assets
-
-      - name: Publish release
+      - name: Upload release asset
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --notes "MeshBan release ${{ github.ref_name }}" \
-            release-assets/**/*.{tar.gz,zip}
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            gh release upload "${{ github.event.release.tag_name }}" \
+              "dist/${{ matrix.output }}.zip" \
+              --clobber
+          else
+            gh release upload "${{ github.event.release.tag_name }}" \
+              "dist/${{ matrix.output }}.tar.gz" \
+              --clobber
+          fi
