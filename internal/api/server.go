@@ -61,7 +61,16 @@ func NewServer(options Options) *Server {
 
 	mux.HandleFunc("/api/v1/status", s.handleStatus)
 
-	handler := adminAccessMiddleware(mux, options.SecretManager)
+	// Register node-to-node API endpoints.
+	mux.HandleFunc("/api/v1/identity", s.handleNodeIdentity)
+	mux.HandleFunc("/api/v1/player", s.handlePlayerQuery)
+
+	// Node API calls are public but restricted to GET method.
+	// The admin middleware runs after, ensuring WebUI paths still require auth.
+	handler := adminAccessMiddleware(
+		nodeMethodMiddleware(mux),
+		options.SecretManager,
+	)
 	s.server = &http.Server{
 		Addr:              options.ListenAddr,
 		Handler:           handler,
@@ -192,7 +201,7 @@ func adminAccessMiddleware(next http.Handler, secretManager *secrets.Manager) ht
 			return
 		}
 
-		if isPublicWebUIPath(r.URL.Path) {
+		if isPublicPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -222,12 +231,16 @@ func adminAccessMiddleware(next http.Handler, secretManager *secrets.Manager) ht
 	})
 }
 
-func isPublicWebUIPath(path string) bool {
+func isPublicPath(path string) bool {
 	if path == "/ui/login" || path == "/ui/logout" {
 		return true
 	}
 
 	if strings.HasPrefix(path, "/ui/static/") {
+		return true
+	}
+
+	if strings.HasPrefix(path, "/api/v1/") {
 		return true
 	}
 
@@ -237,4 +250,24 @@ func isPublicWebUIPath(path string) bool {
 func wantsHTML(r *http.Request) bool {
 	accept := r.Header.Get("Accept")
 	return strings.Contains(accept, "text/html") || accept == ""
+}
+
+// nodeMethodMiddleware restricts requests to /api/v1/node/* to GET only.
+// Non-node paths pass through unchanged.
+func nodeMethodMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{
+				"error": "method not allowed",
+			})
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
