@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build release binaries
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            output: meshban-linux-amd64
+          - goos: linux
+            goarch: arm64
+            output: meshban-linux-arm64
+          - goos: windows
+            goarch: amd64
+            output: meshban-windows-amd64.exe
+          - goos: darwin
+            goarch: amd64
+            output: meshban-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            output: meshban-darwin-arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.3"
+          cache: true
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist/${{ matrix.output }}
+          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.output }}/${{ matrix.output }} .
+          cp README.md dist/${{ matrix.output }}/
+          cp LICENSE dist/${{ matrix.output }}/
+          cp example_config.yaml dist/${{ matrix.output }}/
+
+      - name: Package binary
+        run: |
+          cd dist
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+            zip -r "${{ matrix.output }}.zip" "${{ matrix.output }}"
+          else
+            tar -czf "${{ matrix.output }}.tar.gz" "${{ matrix.output }}"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: |
+            dist/${{ matrix.output }}.tar.gz
+            dist/${{ matrix.output }}.zip
+          if-no-files-found: ignore
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: release-assets
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes "MeshBan release ${{ github.ref_name }}" \
+            release-assets/**/*.{tar.gz,zip}
