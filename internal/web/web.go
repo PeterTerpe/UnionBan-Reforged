@@ -493,9 +493,9 @@ func (h *Handler) minecraftInstanceFormData(statuses []minecraft.ConnectorStatus
 			LogPath:                          instance.Log.Path,
 			LogPollInterval:                  intPtrVal(instance.Log.PollIntervalSeconds),
 			LogPollIntervalSet:               instance.Log.PollIntervalSeconds != nil,
-			BannedPlayersPollInterval:        intPtrVal(instance.RCON.PollIntervalSeconds),
-			BannedPlayersPollIntervalSet:     instance.RCON.PollIntervalSeconds != nil,
-			BannedPlayersPath:                instance.BannedPlayersPath,
+			BannedPlayersPollInterval:        intPtrVal(instance.BannedPlayers.PollIntervalSeconds),
+			BannedPlayersPollIntervalSet:     instance.BannedPlayers.PollIntervalSeconds != nil,
+			BannedPlayersPath:                instance.BannedPlayers.Path,
 			HasRCONPassword:                  hasPassword,
 			Policy:                           minecraftPolicyFormData(instance.Policy),
 			PolicyDefaults:                   minecraftPolicyFormData(h.config.Minecraft.DefaultPolicy),
@@ -580,15 +580,18 @@ func (h *Handler) parseMinecraftConfigForm(r *http.Request) (config.MinecraftCon
 		}
 
 		cfg.Instances = append(cfg.Instances, config.MinecraftInstanceConfig{
-			ID:                id,
-			Enabled:           r.FormValue(prefix+"_enabled") == "on",
-			Mode:              mode,
-			BannedPlayersPath: strings.TrimSpace(r.FormValue(prefix + "_banned_players_path")),
+			ID:      id,
+			Enabled: r.FormValue(prefix+"_enabled") == "on",
+			Mode:    mode,
+			BannedPlayers: config.MinecraftBannedPlayersConfig{
+				Path:                strings.TrimSpace(r.FormValue(prefix + "_banned_players_path")),
+				PollIntervalSeconds: pollInterval,
+			},
 			RCON: config.MinecraftRCONConfig{
 				Host:                  strings.TrimSpace(r.FormValue(prefix + "_rcon_host")),
 				Port:                  port,
 				PasswordEnv:           passwordEnv,
-				PollIntervalSeconds:   pollInterval,
+				PollIntervalSeconds:   existing.RCON.PollIntervalSeconds,
 				CommandTimeoutSeconds: commandTimeout,
 			},
 			Log: config.MinecraftLogConfig{

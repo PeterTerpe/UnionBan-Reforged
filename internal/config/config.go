@@ -84,16 +84,16 @@ type MinecraftUUIDResolverConfig struct {
 }
 
 type MinecraftInstanceConfig struct {
-	ID                string                      `yaml:"id"`
-	Enabled           bool                        `yaml:"enabled"`
-	Mode              string                      `yaml:"mode"`
-	RCON              MinecraftRCONConfig         `yaml:"rcon,omitempty"`
-	Log               MinecraftLogConfig          `yaml:"log,omitempty"`
-	BannedPlayersPath string                      `yaml:"banned_players_path,omitempty"`
-	Policy            MinecraftPolicyConfig       `yaml:"policy,omitempty"`
-	UUIDResolver      MinecraftUUIDResolverConfig `yaml:"uuid_resolver,omitempty"`
-	PaperAdapter      string                      `yaml:"paper_adapter,omitempty"`
-	AdapterTokenEnv   string                      `yaml:"adapter_token_env,omitempty"`
+	ID              string                       `yaml:"id"`
+	Enabled         bool                         `yaml:"enabled"`
+	Mode            string                       `yaml:"mode"`
+	RCON            MinecraftRCONConfig          `yaml:"rcon,omitempty"`
+	Log             MinecraftLogConfig           `yaml:"log,omitempty"`
+	BannedPlayers   MinecraftBannedPlayersConfig `yaml:"banned_players,omitempty"`
+	Policy          MinecraftPolicyConfig        `yaml:"policy,omitempty"`
+	UUIDResolver    MinecraftUUIDResolverConfig  `yaml:"uuid_resolver,omitempty"`
+	PaperAdapter    string                       `yaml:"paper_adapter,omitempty"`
+	AdapterTokenEnv string                       `yaml:"adapter_token_env,omitempty"`
 }
 
 type MinecraftRCONConfig struct {
@@ -105,6 +105,11 @@ type MinecraftRCONConfig struct {
 }
 
 type MinecraftLogConfig struct {
+	Path                string `yaml:"path,omitempty"`
+	PollIntervalSeconds *int   `yaml:"poll_interval_seconds,omitempty"`
+}
+
+type MinecraftBannedPlayersConfig struct {
 	Path                string `yaml:"path,omitempty"`
 	PollIntervalSeconds *int   `yaml:"poll_interval_seconds,omitempty"`
 }

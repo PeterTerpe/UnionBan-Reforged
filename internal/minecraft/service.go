@@ -234,7 +234,7 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 		commandTimeout = 3 * time.Second
 	}
 
-	banPollInterval := time.Duration(ptrVal(instance.RCON.PollIntervalSeconds)) * time.Second
+	banPollInterval := time.Duration(ptrVal(instance.BannedPlayers.PollIntervalSeconds)) * time.Second
 	if banPollInterval <= 0 {
 		banPollInterval = time.Duration(cfg.BannedPlayersPollIntervalSeconds) * time.Second
 	}
@@ -344,7 +344,7 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 	}
 
 	s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
-	s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, policy, knownServerBans)
+	s.importServerBans(ctx, instanceID, instance.BannedPlayers.Path, policy, knownServerBans)
 
 	logTicker := time.NewTicker(logInterval)
 	defer logTicker.Stop()
@@ -364,7 +364,7 @@ func (s *Service) monitorRCON(ctx context.Context, cfg config.MinecraftConfig, i
 		case <-logTicker.C:
 			s.readJoinLog(ctx, instanceID, tailer, client, resolver, policy, logUUIDs, recentPlayers, onlinePlayers)
 		case <-banTicker.C:
-			s.importServerBans(ctx, instanceID, instance.BannedPlayersPath, policy, knownServerBans)
+			s.importServerBans(ctx, instanceID, instance.BannedPlayers.Path, policy, knownServerBans)
 		}
 	}
 }
@@ -779,7 +779,7 @@ func (s *Service) CheckHealth(ctx context.Context, id string) error {
 	}
 
 	// --- banned-players.json accessibility ---
-	banPath := strings.TrimSpace(instance.BannedPlayersPath)
+	banPath := strings.TrimSpace(instance.BannedPlayers.Path)
 	if banPath != "" {
 		if _, err := os.Stat(banPath); err != nil {
 			msg := "banned-players: " + err.Error()

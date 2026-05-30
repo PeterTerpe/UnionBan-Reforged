@@ -40,4 +40,12 @@ func TestLoadExampleConfigIncludesMinecraftRCON(t *testing.T) {
 	if cfg.Minecraft.UUIDResolver.ProxyURL != "PROXY_URL" && cfg.Minecraft.UUIDResolver.ProxyURLEnv != "PROXY_URL" {
 		t.Fatalf("proxy URL config was not loaded from example_config.yaml")
 	}
+
+	if instance.BannedPlayers.Path != "/home/minecraft/survival/banned-players.json" {
+		t.Fatalf("banned_players path = %q, want survival/banned-players.json", instance.BannedPlayers.Path)
+	}
+
+	if instance.BannedPlayers.PollIntervalSeconds == nil || *instance.BannedPlayers.PollIntervalSeconds != 10 {
+		t.Fatalf("banned_players poll_interval = %v, want 10", instance.BannedPlayers.PollIntervalSeconds)
+	}
 }
