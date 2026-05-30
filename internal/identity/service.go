@@ -42,6 +42,7 @@ type Identity struct {
 type Certificate struct {
 	Type        string `json:"type"`
 	NodeID      string `json:"node_id"`
+	PeerID      string `json:"peer_id"`
 	PublicKey   string `json:"public_key"`
 	DisplayName string `json:"display_name"`
 	CreatedAt   int64  `json:"created_at"`
@@ -279,9 +280,12 @@ func createCertificate(identity *Identity, displayName string, keyOptions KeyOpt
 		return "", err
 	}
 
+	pubKey := privateKey.Public().(ed25519.PublicKey)
+
 	cert := Certificate{
 		Type:        certificateType,
 		NodeID:      identity.NodeID,
+		PeerID:      peerIDFromPublicKey(pubKey),
 		PublicKey:   identity.PublicKey,
 		DisplayName: displayName,
 		CreatedAt:   time.Now().Unix(),
@@ -302,6 +306,35 @@ func createCertificate(identity *Identity, displayName string, keyOptions KeyOpt
 func NodeIDFromPublicKey(publicKey []byte) string {
 	sum := sha256.Sum256(publicKey)
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:16]))
+}
+
+// peerIDFromPublicKey derives a libp2p DHT peer ID from an Ed25519 public key.
+//
+// libp2p peer IDs are multihashes of the protobuf-serialized public key:
+//
+//	peer_id = multihash(sha2-256, protobuf(PublicKey{Type: Ed25519(1), Data: rawKey}))
+//
+// The result is base64url-encoded (consistent with the rest of the codebase).
+func peerIDFromPublicKey(pubKey ed25519.PublicKey) string {
+	// Protobuf-encode the libp2p crypto.PublicKey message:
+	//   field 1 (Type):  varint 1 (Ed25519)  → 0x08 0x01
+	//   field 2 (Data):  length-delimited 32  → 0x12 0x20 + raw key
+	proto := make([]byte, 4+ed25519.PublicKeySize)
+	proto[0] = 0x08
+	proto[1] = 0x01
+	proto[2] = 0x12
+	proto[3] = 0x20
+	copy(proto[4:], pubKey)
+
+	hash := sha256.Sum256(proto)
+
+	// Multihash: sha2-256 (0x12) + 32-byte length (0x20) + hash
+	peerID := make([]byte, 2+sha256.Size)
+	peerID[0] = 0x12
+	peerID[1] = 0x20
+	copy(peerID[2:], hash[:])
+
+	return encodeBase64(peerID)
 }
 
 func identityFromRecord(record *database.IdentityRecord) *Identity {
