@@ -6,8 +6,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -301,7 +301,7 @@ func createCertificate(identity *Identity, displayName string, keyOptions KeyOpt
 
 func NodeIDFromPublicKey(publicKey []byte) string {
 	sum := sha256.Sum256(publicKey)
-	return "mb_" + hex.EncodeToString(sum[:])
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:16]))
 }
 
 func identityFromRecord(record *database.IdentityRecord) *Identity {
