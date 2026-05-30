@@ -1,0 +1,414 @@
+{{define "content"}}
+<div class="card">
+    <h2>Database Management</h2>
+    <p>This page allows manual debugging of local banlist records and peer node management.</p>
+    <p><a href="/ui">Back to dashboard</a></p>
+
+    {{if .Message}}
+        <p class="result-ok">{{.Message}}</p>
+    {{end}}
+
+    {{if .ErrorMessage}}
+        <p class="result-error">{{.ErrorMessage}}</p>
+    {{end}}
+</div>
+
+<div class="server-tabs" data-server-tabs>
+    <div class="tab-list" role="tablist">
+        <button class="tab-button active" type="button" role="tab" aria-controls="db-tab-banlist" aria-selected="true" data-tab-target="db-tab-banlist">
+            Banlist
+        </button>
+        <button class="tab-button" type="button" role="tab" aria-controls="db-tab-nodes" aria-selected="false" data-tab-target="db-tab-nodes">
+            Nodes
+            {{if .NodeRecords}}<span class="status-dot status-ok"></span>{{end}}
+        </button>
+    </div>
+
+    <!-- ============ BANLIST TAB ============ -->
+    <section id="db-tab-banlist" class="server-tab-panel active" role="tabpanel">
+        <div class="card">
+            <h2>Player Decision Cache</h2>
+            <p>
+                The player decision cache stores the result of policy evaluations
+                so that repeated checks for the same player are fast.  Clearing it
+                forces all decisions to be recomputed on the next player join.
+            </p>
+
+            <form method="post" action="" onsubmit="return confirm('Clear the entire player decision cache? All decisions will be recomputed on next join.')">
+                <input type="hidden" name="_action" value="clear_cache">
+                <button class="danger-button" type="submit">Clear Cache</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Add Local Ban Entry</h2>
+
+            <form method="post" action="">
+                <input type="hidden" name="_action" value="create">
+                <label>Player UUID</label>
+                <input class="input" name="player_uuid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+
+                <label>Player Name</label>
+                <input class="input" name="player_name" placeholder="Notch">
+
+                <label>Reason</label>
+                <input class="input" name="reason" placeholder="cheating">
+
+                <label>UUID Source</label>
+                <input class="input" name="uuid_source" value="manual">
+
+                <p class="warning-text">
+                    Source node ID and signature will be generated automatically by the local identity.
+                </p>
+
+                <button class="button" type="submit">Add Ban Entry</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Local Banlist</h2>
+
+            <div class="banlist-info">
+                <strong>{{.BanTotalCount}}</strong> total ban entry(s)
+                {{if gt .BanTotalPages 1}}
+                    &mdash; page <strong>{{.BanCurrentPage}}</strong> of <strong>{{.BanTotalPages}}</strong>
+                    {{if .BanSearchUUID}} &middot; UUID: <code>{{.BanSearchUUID}}</code>{{end}}
+                    {{if .BanSearchName}} &middot; Name: <code>{{.BanSearchName}}</code>{{end}}
+                    {{if .BanSearchSource}} &middot; Source: <code>{{.BanSearchSource}}</code>{{end}}
+                    {{if .BanSearchReason}} &middot; Reason: <code>{{.BanSearchReason}}</code>{{end}}
+                {{end}}
+            </div>
+
+            <form method="get" action="" class="banlist-search">
+                <input class="input search-input" type="text" name="uuid" placeholder="UUID" value="{{.BanSearchUUID}}">
+                <input class="input search-input" type="text" name="name" placeholder="Player name" value="{{.BanSearchName}}">
+                <input class="input search-input" type="text" name="source" placeholder="Source node or UUID source" value="{{.BanSearchSource}}">
+                <input class="input search-input" type="text" name="reason" placeholder="Reason" value="{{.BanSearchReason}}">
+                <input type="hidden" name="page" value="1">
+                <button class="button" type="submit">Search</button>
+                <button class="secondary-button" type="submit" formaction="/ui/database">Clear</button>
+            </form>
+
+            {{if .BanEntries}}
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Player UUID</th>
+                                <th>Player Name</th>
+                                <th>Reason</th>
+                                <th>UUID Source</th>
+                                <th>Source Node ID</th>
+                                <th>Signature</th>
+                                <th>Created At</th>
+                                <th>Updated At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {{range .BanEntries}}
+                                <tr id="row-{{.ID}}">
+                                    <td>{{.ID}}</td>
+
+                                    <td>
+                                        <input form="update-ban-{{.ID}}" class="table-input ban-field" name="player_uuid" value="{{.PlayerUUID}}" readonly>
+                                    </td>
+
+                                    <td>
+                                        <input form="update-ban-{{.ID}}" class="table-input ban-field" name="player_name" value="{{.PlayerName}}" readonly>
+                                    </td>
+
+                                    <td>
+                                        <input form="update-ban-{{.ID}}" class="table-input ban-field" name="reason" value="{{.Reason}}" readonly>
+                                    </td>
+
+                                    <td>
+                                        <input form="update-ban-{{.ID}}" class="table-input ban-field" name="uuid_source" value="{{.UUIDSource}}" readonly>
+                                    </td>
+
+                                    <td>
+                                        <code class="clip-code" title="Click to copy&#10;{{.SourceNodeID}}" data-full="{{.SourceNodeID}}" onclick="copyCode(this)">{{printf "%.20s" .SourceNodeID}}&hellip;</code>
+                                    </td>
+
+                                    <td class="signature-cell">
+                                        <code class="clip-code" title="Click to copy&#10;{{.Signature}}" data-full="{{.Signature}}" onclick="copyCode(this)">{{printf "%.20s" .Signature}}&hellip;</code>
+                                    </td>
+
+                                    <td><code>{{formatUnix .CreatedAt}}</code></td>
+                                    <td><code>{{formatUnix .UpdatedAt}}</code></td>
+
+                                    <td class="action-cell">
+                                        <div class="action-btns action-btns-default">
+                                            <button class="button" data-row-id="{{.ID}}" onclick="startEdit(this.dataset.rowId)">Edit</button>
+                                            <form method="post" action="" class="inline-form" onsubmit="return confirm('Delete this ban entry? This action cannot be undone.')">
+                                                <input type="hidden" name="_action" value="delete">
+                                                <input type="hidden" name="id" value="{{.ID}}">
+                                                <button class="danger-button" type="submit">Delete</button>
+                                            </form>
+                                            <form method="post" action="" class="inline-form">
+                                                <input type="hidden" name="_action" value="verify_signature">
+                                                <input type="hidden" name="player_uuid" value="{{.PlayerUUID}}">
+                                                <input type="hidden" name="reason" value="{{.Reason}}">
+                                                <input type="hidden" name="source_node_id" value="{{.SourceNodeID}}">
+                                                <input type="hidden" name="signature" value="{{.Signature}}">
+                                                <input type="hidden" name="updated_at" value="{{.UpdatedAt}}">
+                                                <button class="secondary-button" type="submit">Verify</button>
+                                            </form>
+                                        </div>
+
+                                        <div class="action-btns action-btns-edit" style="display:none;">
+                                            <form id="update-ban-{{.ID}}" method="post" action="" class="inline-form">
+                                                <input type="hidden" name="_action" value="update">
+                                                <input type="hidden" name="id" value="{{.ID}}">
+                                                <button class="button" type="submit">Save</button>
+                                            </form>
+                                            <button class="secondary-button" data-row-id="{{.ID}}" onclick="cancelEdit(this.dataset.rowId)">Cancel</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+
+                {{if gt .BanTotalPages 1}}
+                    <div class="pagination">
+                        {{if gt .BanCurrentPage 1}}
+                            <a class="button page-button" href="?page=1{{if .BanSearchUUID}}&uuid={{.BanSearchUUID}}{{end}}{{if .BanSearchName}}&name={{.BanSearchName}}{{end}}{{if .BanSearchSource}}&source={{.BanSearchSource}}{{end}}{{if .BanSearchReason}}&reason={{.BanSearchReason}}{{end}}">First</a>
+                            <a class="button page-button" href="?page={{sub .BanCurrentPage 1}}{{if .BanSearchUUID}}&uuid={{.BanSearchUUID}}{{end}}{{if .BanSearchName}}&name={{.BanSearchName}}{{end}}{{if .BanSearchSource}}&source={{.BanSearchSource}}{{end}}{{if .BanSearchReason}}&reason={{.BanSearchReason}}{{end}}">Prev</a>
+                        {{else}}
+                            <span class="page-button disabled">First</span>
+                            <span class="page-button disabled">Prev</span>
+                        {{end}}
+
+                        <span class="page-info">Page {{.BanCurrentPage}} of {{.BanTotalPages}}</span>
+
+                        {{if lt .BanCurrentPage .BanTotalPages}}
+                            <a class="button page-button" href="?page={{add .BanCurrentPage 1}}{{if .BanSearchUUID}}&uuid={{.BanSearchUUID}}{{end}}{{if .BanSearchName}}&name={{.BanSearchName}}{{end}}{{if .BanSearchSource}}&source={{.BanSearchSource}}{{end}}{{if .BanSearchReason}}&reason={{.BanSearchReason}}{{end}}">Next</a>
+                            <a class="button page-button" href="?page={{.BanTotalPages}}{{if .BanSearchUUID}}&uuid={{.BanSearchUUID}}{{end}}{{if .BanSearchName}}&name={{.BanSearchName}}{{end}}{{if .BanSearchSource}}&source={{.BanSearchSource}}{{end}}{{if .BanSearchReason}}&reason={{.BanSearchReason}}{{end}}">Last</a>
+                        {{else}}
+                            <span class="page-button disabled">Next</span>
+                            <span class="page-button disabled">Last</span>
+                        {{end}}
+                    </div>
+                {{end}}
+            {{else}}
+                <p>No ban entries found.</p>
+            {{end}}
+        </div>
+    </section>
+
+    <!-- ============ NODES TAB ============ -->
+    <section id="db-tab-nodes" class="server-tab-panel" role="tabpanel">
+        <div class="card">
+            <h2>Add Peer Node</h2>
+            <p class="hint-text">Enter the address of a remote MeshBan node. Its certificate and public key will be fetched and verified automatically.</p>
+
+            <form method="post" action="">
+                <input type="hidden" name="_action" value="node_create">
+                <label>Node Address</label>
+                <input class="input wide-input" name="node_address" placeholder="example.com or example.com:30000 or 10.0.0.5:30000" style="max-width:100%;">
+                <p class="hint-text">Default port is 30000 if not specified. HTTPS is supported.</p>
+                <button class="button" type="submit">Add Node</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Peer Nodes</h2>
+
+            {{if .NodeRecords}}
+                <div class="banlist-info">
+                    <strong>{{len .NodeRecords}}</strong> node(s) registered
+                </div>
+
+                <div class="table-scroll">
+                    <table class="data-table compact-table">
+                        <thead>
+                            <tr>
+                                <th>Node ID</th>
+                                <th>Trust Level</th>
+                                <th>Address</th>
+                                <th>IP</th>
+                                <th>Certificate</th>
+                                <th>Public Key</th>
+                                <th>Updated</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .NodeRecords}}
+                                <tr id="node-row-{{.NodeID}}">
+                                    <td>
+                                        <code class="clip-code" title="Click to copy&#10;{{.NodeID}}" data-full="{{.NodeID}}" onclick="copyCode(this)">{{printf "%.20s" .NodeID}}&hellip;</code>
+                                    </td>
+                                    <td>
+                                        <span class="status-pill trust-{{.TrustLevel}}">{{.TrustLevel}}</span>
+                                    </td>
+                                    <td>
+                                        <code>{{if .Address}}{{.Address}}{{else}}&mdash;{{end}}</code>
+                                    </td>
+                                    <td>
+                                        <code>{{if .IP}}{{.IP}}{{else}}&mdash;{{end}}</code>
+                                    </td>
+                                    <td>
+                                        <code class="clip-code" title="Click to copy&#10;{{.Certificate}}" data-full="{{.Certificate}}" onclick="copyCode(this)">{{printf "%.24s" .Certificate}}&hellip;</code>
+                                    </td>
+                                    <td>
+                                        <code class="clip-code" title="Click to copy&#10;{{.PublicKey}}" data-full="{{.PublicKey}}" onclick="copyCode(this)">{{printf "%.24s" .PublicKey}}&hellip;</code>
+                                    </td>
+                                    <td><code>{{formatUnix .UpdatedAt}}</code></td>
+                                    <td class="action-cell">
+                                        <div class="action-btns action-btns-default">
+                                            <button class="button" data-node-id="{{.NodeID}}" onclick="startNodeEdit(this.dataset.nodeId)">Edit</button>
+                                            <form method="post" action="" class="inline-form" onsubmit="return confirm('Delete node {{.NodeID}}? This action cannot be undone.')">
+                                                <input type="hidden" name="_action" value="node_delete">
+                                                <input type="hidden" name="node_id" value="{{.NodeID}}">
+                                                <button class="danger-button" type="submit">Delete</button>
+                                            </form>
+                                        </div>
+                                        <div class="action-btns action-btns-edit" style="display:none;">
+                                            <button class="button" form="node-update-{{.NodeID}}" type="submit">Save</button>
+                                            <button class="secondary-button" data-node-id="{{.NodeID}}" onclick="cancelNodeEdit(this.dataset.nodeId)">Cancel</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr id="node-edit-{{.NodeID}}" style="display:none;">
+                                    <td colspan="8">
+                                        <form id="node-update-{{.NodeID}}" method="post" action="">
+                                            <input type="hidden" name="_action" value="node_update">
+                                            <div class="field-grid two-col" style="padding:8px 0;">
+                                                <div>
+                                                    <label>Trust Level</label>
+                                                    <select class="input" name="trust_level">
+                                                        <option value="ultimate" {{if eq .TrustLevel "ultimate"}}selected{{end}}>Ultimate</option>
+                                                        <option value="trusted" {{if eq .TrustLevel "trusted"}}selected{{end}}>Trusted</option>
+                                                        <option value="friend" {{if eq .TrustLevel "friend"}}selected{{end}}>Friend</option>
+                                                        <option value="unknown" {{if eq .TrustLevel "unknown"}}selected{{end}}>Unknown</option>
+                                                        <option value="untrusted" {{if eq .TrustLevel "untrusted"}}selected{{end}}>Untrusted</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label>Address</label>
+                                                    <input class="input" name="address" value="{{.Address}}">
+                                                </div>
+                                                <div>
+                                                    <label>IP</label>
+                                                    <input class="input" name="ip" value="{{.IP}}">
+                                                </div>
+                                            </div>
+                                            <label>Certificate</label>
+                                            <textarea class="large-textarea" name="certificate" style="min-height:60px;">{{.Certificate}}</textarea>
+                                            <label>Public Key</label>
+                                            <input class="input wide-input" name="public_key" value="{{.PublicKey}}" style="max-width:100%;">
+                                            <input type="hidden" name="node_id" value="{{.NodeID}}">
+                                        </form>
+                                    </td>
+                                </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            {{else}}
+                <p>No peer nodes registered. Add one above to enable cross-node banlist queries.</p>
+            {{end}}
+        </div>
+    </section>
+</div>
+
+<script>
+// ---- Banlist inline edit ----
+function startEdit(id) {
+    var row = document.getElementById('row-' + id);
+    var fields = row.querySelectorAll('.ban-field');
+    for (var i = 0; i < fields.length; i++) {
+        fields[i].readOnly = false;
+        fields[i].classList.add('editing');
+    }
+    row.querySelector('.action-btns-default').style.display = 'none';
+    row.querySelector('.action-btns-edit').style.display = '';
+}
+
+
+function cancelEdit(id) {
+    var row = document.getElementById('row-' + id);
+    var fields = row.querySelectorAll('.ban-field');
+    for (var i = 0; i < fields.length; i++) {
+        fields[i].readOnly = true;
+        fields[i].classList.remove('editing');
+    }
+    row.querySelector('.action-btns-default').style.display = '';
+    row.querySelector('.action-btns-edit').style.display = 'none';
+}
+
+// ---- Node inline edit ----
+function startNodeEdit(nodeId) {
+    var editRow = document.getElementById('node-edit-' + nodeId);
+    if (editRow) {
+        editRow.style.display = '';
+    }
+    var viewRow = document.getElementById('node-row-' + nodeId);
+    if (viewRow) {
+        viewRow.querySelector('.action-btns-default').style.display = 'none';
+        viewRow.querySelector('.action-btns-edit').style.display = '';
+    }
+}
+
+function cancelNodeEdit(nodeId) {
+    var editRow = document.getElementById('node-edit-' + nodeId);
+    if (editRow) {
+        editRow.style.display = 'none';
+    }
+    var viewRow = document.getElementById('node-row-' + nodeId);
+    if (viewRow) {
+        viewRow.querySelector('.action-btns-default').style.display = '';
+        viewRow.querySelector('.action-btns-edit').style.display = 'none';
+    }
+}
+
+// ---- Tab switching (shared with Minecraft page) ----
+document.querySelectorAll("[data-server-tabs]").forEach(function (tabs) {
+    var buttons = tabs.querySelectorAll("[data-tab-target]");
+    var panels = tabs.querySelectorAll(".server-tab-panel");
+
+    buttons.forEach(function (button) {
+        button.addEventListener("click", function () {
+            buttons.forEach(function (item) {
+                item.classList.remove("active");
+                item.setAttribute("aria-selected", "false");
+            });
+            panels.forEach(function (panel) {
+                panel.classList.remove("active");
+            });
+
+            button.classList.add("active");
+            button.setAttribute("aria-selected", "true");
+
+            var panel = tabs.querySelector("#" + button.dataset.tabTarget);
+            if (panel) {
+                panel.classList.add("active");
+            }
+        });
+    });
+});
+
+function copyCode(el) {
+    var full = el.getAttribute('data-full');
+    if (!full) return;
+    navigator.clipboard.writeText(full).then(function() {
+        var orig = el.textContent;
+        el.textContent = 'Copied!';
+        el.classList.add('clip-copied');
+        setTimeout(function() {
+            el.textContent = orig;
+            el.classList.remove('clip-copied');
+        }, 1200);
+    }).catch(function() {
+        var orig = el.textContent;
+        el.textContent = 'Copy failed';
+        setTimeout(function() { el.textContent = orig; }, 1200);
+    });
+}
+</script>
+{{end}}

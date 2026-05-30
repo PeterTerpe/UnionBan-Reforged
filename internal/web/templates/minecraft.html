@@ -1,0 +1,329 @@
+{{define "content"}}
+<div class="card">
+    <h2>Minecraft Connections</h2>
+
+    {{if .Message}}
+        <p class="result-ok">{{.Message}}</p>
+    {{end}}
+
+    {{if .ErrorMessage}}
+        <p class="result-error">{{.ErrorMessage}}</p>
+    {{end}}
+
+    <form method="post" action="">
+        <input type="hidden" name="_action" value="add">
+        <button class="secondary-button" type="submit">Add Connector</button>
+    </form>
+</div>
+
+<form method="post" action="">
+    <input type="hidden" name="_action" value="save">
+    <input type="hidden" name="instance_count" value="{{len .MinecraftInstances}}">
+
+    <div class="card">
+        <h2>Global Settings</h2>
+
+        <label>
+            <input type="checkbox" name="minecraft_enabled" {{if .Config.Minecraft.Enabled}}checked{{end}}>
+            Enable Minecraft monitoring
+        </label>
+
+        <label>Default Kick Message</label>
+        <textarea class="large-textarea" name="default_kick_message">{{.MinecraftPolicy.KickMessage}}</textarea>
+
+        <label>Support Contact or Secret Name</label>
+        <input class="input" name="default_support_contact" value="{{.MinecraftPolicy.SupportContact}}">
+
+        <div class="field-grid">
+            <div>
+                <label>Ultimate</label>
+                <input class="input" type="number" min="0" name="default_ultimate" value="{{.MinecraftPolicy.Ultimate}}">
+            </div>
+            <div>
+                <label>Trusted</label>
+                <input class="input" type="number" min="0" name="default_trusted" value="{{.MinecraftPolicy.Trusted}}">
+            </div>
+            <div>
+                <label>Friend</label>
+                <input class="input" type="number" min="0" name="default_friend" value="{{.MinecraftPolicy.Friend}}">
+            </div>
+            <div>
+                <label>Unknown</label>
+                <input class="input" type="number" min="0" name="default_unknown" value="{{.MinecraftPolicy.Unknown}}">
+            </div>
+            <div>
+                <label>Untrusted</label>
+                <input class="input" type="number" min="0" name="default_untrusted" value="{{.MinecraftPolicy.Untrusted}}">
+            </div>
+        </div>
+
+        <hr>
+
+        <label>Default Poll Intervals</label>
+        <p class="hint-text">Per-connector values override these defaults.</p>
+
+        <div class="field-grid">
+            <div>
+                <label>Log Scan (seconds)</label>
+                <input class="input" type="number" min="1" name="default_log_poll_interval" value="{{.DefaultLogPollInterval}}">
+            </div>
+            <div>
+                <label>Banned Players Scan (seconds)</label>
+                <input class="input" type="number" min="1" name="default_banned_players_poll_interval" value="{{.DefaultBannedPlayersPollInterval}}">
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>UUID Resolver</h2>
+
+        <label>
+            <input type="checkbox" name="default_uuid_enabled" {{if .MinecraftResolver.Enabled}}checked{{end}}>
+            Enable external UUID resolver
+        </label>
+
+        <label>Endpoint</label>
+        <input class="input wide-input" name="default_uuid_endpoint" value="{{.MinecraftResolver.Endpoint}}">
+
+        <div class="field-grid">
+            <div>
+                <label>Response UUID Field</label>
+                <input class="input" name="default_uuid_response_field" value="{{.MinecraftResolver.ResponseUUIDField}}">
+            </div>
+            <div>
+                <label>Timeout Seconds</label>
+                <input class="input" type="number" min="0" name="default_uuid_timeout" value="{{.MinecraftResolver.TimeoutSeconds}}">
+            </div>
+            <div>
+                <label>Retry Count</label>
+                <input class="input" type="number" min="0" name="default_uuid_retries" value="{{.MinecraftResolver.RetryCount}}">
+            </div>
+            <div>
+                <label>Proxy Type</label>
+                <select class="input" name="default_uuid_proxy_type">
+                    <option value="none" {{if eq .MinecraftResolver.ProxyType "none"}}selected{{end}}>none</option>
+                    <option value="environment" {{if eq .MinecraftResolver.ProxyType "environment"}}selected{{end}}>environment</option>
+                    <option value="http" {{if eq .MinecraftResolver.ProxyType "http"}}selected{{end}}>http</option>
+                    <option value="https" {{if eq .MinecraftResolver.ProxyType "https"}}selected{{end}}>https</option>
+                    <option value="socks5" {{if eq .MinecraftResolver.ProxyType "socks5"}}selected{{end}}>socks5</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="field-grid two-col">
+            <div>
+                <label>Proxy URL or Secret Value</label>
+                <input class="input" name="default_uuid_proxy_url" value="{{.MinecraftResolver.ProxyURL}}">
+            </div>
+            <div>
+                <label>Proxy URL Secret Name</label>
+                <input class="input" name="default_uuid_proxy_url_env" value="{{.MinecraftResolver.ProxyURLEnv}}">
+            </div>
+            <div>
+                <label>Proxy Username Secret</label>
+                <input class="input" name="default_uuid_proxy_username_env" value="{{.MinecraftResolver.ProxyUsernameEnv}}">
+            </div>
+            <div>
+                <label>Proxy Password Secret</label>
+                <input class="input" name="default_uuid_proxy_pass_env" value="{{.MinecraftResolver.ProxyPassEnv}}">
+            </div>
+        </div>
+
+        <label>
+            <input type="checkbox" name="default_uuid_proxy_auth" {{if .MinecraftResolver.ProxyAuth}}checked{{end}}>
+            Use proxy authentication
+        </label>
+    </div>
+
+    {{if .MinecraftInstances}}
+        <div class="server-tabs" data-server-tabs>
+            <div class="tab-list" role="tablist">
+                {{range .MinecraftInstances}}
+                    <button class="tab-button {{if eq .Index 0}}active{{end}}" type="button" role="tab" aria-controls="minecraft-server-{{.Index}}" aria-selected="{{if eq .Index 0}}true{{else}}false{{end}}" data-tab-target="minecraft-server-{{.Index}}">
+                        {{.ID}}
+                        {{if .Status}}<span class="status-dot {{statusClass .Status.State}}"></span>{{end}}
+                    </button>
+                {{end}}
+            </div>
+
+            {{range .MinecraftInstances}}
+                <section id="minecraft-server-{{.Index}}" class="card connector-card server-tab-panel {{if eq .Index 0}}active{{end}}" role="tabpanel">
+                    <div class="connector-heading">
+                        <h2>Connector: {{.ID}}</h2>
+                        <button class="secondary-button" type="submit" form="health-check-{{.Index}}">Health Check</button>
+                        <button class="danger-button" type="submit" form="delete-minecraft-{{.Index}}">Delete</button>
+                    </div>
+
+                    {{if .Status}}
+                        <div class="status-grid">
+                            <div>
+                                <span class="status-pill {{statusClass .Status.State}}">{{.Status.State}}</span>
+                                <p>{{.Status.Message}}</p>
+                            </div>
+                            <div>
+                                <label>Address</label>
+                                <code>{{.Status.Address}}</code>
+                            </div>
+                            <div>
+                                <label>Online</label>
+                                <code>{{.Status.OnlinePlayers}}</code>
+                            </div>
+                            <div>
+                                <label>Last Check</label>
+                                <code>{{formatUnix .Status.LastPollUnix}}</code>
+                            </div>
+                        </div>
+                        {{if .Status.LastError}}
+                            <p class="result-error">{{.Status.LastError}}</p>
+                        {{end}}
+                    {{end}}
+
+                    <input type="hidden" name="instance_{{.Index}}_mode" value="{{.Mode}}">
+
+                    <div class="field-grid two-col">
+                        <div>
+                            <label>Connector ID</label>
+                            <input class="input" name="instance_{{.Index}}_id" value="{{.ID}}">
+                        </div>
+                        <div>
+                            <label>Mode</label>
+                            <input class="input" value="{{.Mode}}" disabled>
+                        </div>
+                        <div>
+                            <label>RCON Host</label>
+                            <input class="input" name="instance_{{.Index}}_rcon_host" value="{{.RCONHost}}">
+                        </div>
+                        <div>
+                            <label>RCON Port</label>
+                            <input class="input" type="number" min="1" max="65535" name="instance_{{.Index}}_rcon_port" value="{{.RCONPort}}">
+                        </div>
+                        <div>
+                            <label>RCON Password Secret Name</label>
+                            <input class="input" name="instance_{{.Index}}_rcon_password_env" value="{{.RCONPasswordEnv}}">
+                        </div>
+                        <div>
+                            <label>Set RCON Password</label>
+                            <input class="input" type="password" name="instance_{{.Index}}_rcon_password" placeholder="{{if .HasRCONPassword}}Configured{{else}}Not configured{{end}}">
+                        </div>
+                        <div>
+                            <label>Banned Players Poll Interval Seconds</label>
+                            <input class="input" type="number" min="1" name="instance_{{.Index}}_banned_players_poll_interval" value="{{if .BannedPlayersPollIntervalSet}}{{.BannedPlayersPollInterval}}{{end}}" placeholder="{{.DefaultBannedPlayersPollInterval}}">
+                        </div>
+                        <div>
+                            <label>Command Timeout Seconds</label>
+                            <input class="input" type="number" min="1" name="instance_{{.Index}}_rcon_command_timeout" value="{{.RCONCommandTimeout}}">
+                        </div>
+                        <div>
+                            <label>Server Log Path</label>
+                            <input class="input" name="instance_{{.Index}}_log_path" value="{{.LogPath}}">
+                        </div>
+                        <div>
+                            <label>Log Scan Interval Seconds</label>
+                            <input class="input" type="number" min="1" name="instance_{{.Index}}_log_poll_interval" value="{{if .LogPollIntervalSet}}{{.LogPollInterval}}{{end}}" placeholder="{{.DefaultLogPollInterval}}">
+                        </div>
+                        <div>
+                            <label>Banned Players JSON Path</label>
+                            <input class="input" name="instance_{{.Index}}_banned_players_path" value="{{.BannedPlayersPath}}">
+                        </div>
+                    </div>
+
+                    <label>
+                        <input type="checkbox" name="instance_{{.Index}}_enabled" {{if .Enabled}}checked{{end}}>
+                        Enable this connector
+                    </label>
+
+                    <hr>
+
+                    <label>Kick Message Override</label>
+                    <textarea class="large-textarea" name="instance_{{.Index}}_kick_message" placeholder="{{$.MinecraftPolicy.KickMessage}}">{{.Policy.KickMessage}}</textarea>
+
+                    <label>Kick Reason Override</label>
+                    <input class="input wide-input" name="instance_{{.Index}}_kick_reason" value="{{.Policy.KickReason}}">
+
+                    <label>Support Contact Override</label>
+                    <input class="input wide-input" name="instance_{{.Index}}_support_contact" value="{{.Policy.SupportContact}}">
+
+                    <div class="field-grid">
+                        <div>
+                            <label>Ultimate</label>
+                            <input class="input" type="number" min="0" name="instance_{{.Index}}_ultimate" value="{{if .Policy.UltimateSet}}{{.Policy.Ultimate}}{{end}}" placeholder="{{.PolicyDefaults.Ultimate}}">
+                        </div>
+                        <div>
+                            <label>Trusted</label>
+                            <input class="input" type="number" min="0" name="instance_{{.Index}}_trusted" value="{{if .Policy.TrustedSet}}{{.Policy.Trusted}}{{end}}" placeholder="{{.PolicyDefaults.Trusted}}">
+                        </div>
+                        <div>
+                            <label>Friend</label>
+                            <input class="input" type="number" min="0" name="instance_{{.Index}}_friend" value="{{if .Policy.FriendSet}}{{.Policy.Friend}}{{end}}" placeholder="{{.PolicyDefaults.Friend}}">
+                        </div>
+                        <div>
+                            <label>Unknown</label>
+                            <input class="input" type="number" min="0" name="instance_{{.Index}}_unknown" value="{{if .Policy.UnknownSet}}{{.Policy.Unknown}}{{end}}" placeholder="{{.PolicyDefaults.Unknown}}">
+                        </div>
+                        <div>
+                            <label>Untrusted</label>
+                            <input class="input" type="number" min="0" name="instance_{{.Index}}_untrusted" value="{{if .Policy.UntrustedSet}}{{.Policy.Untrusted}}{{end}}" placeholder="{{.PolicyDefaults.Untrusted}}">
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <h2>Server Logs</h2>
+                    {{if .LogLines}}
+                        <pre class="log-view server-log-view">{{range .LogLines}}{{.}}
+{{end}}</pre>
+                    {{else}}
+                        <p>No matching log entries.</p>
+                    {{end}}
+                </section>
+            {{end}}
+        </div>
+    {{else}}
+        <div class="card">
+            <p>No Minecraft connectors are configured.</p>
+        </div>
+    {{end}}
+
+    <div class="card">
+        <button class="button" type="submit">Save Minecraft Settings</button>
+    </div>
+</form>
+
+{{range .MinecraftInstances}}
+    <form id="health-check-{{.Index}}" method="post" action="">
+        <input type="hidden" name="_action" value="health-check">
+        <input type="hidden" name="id" value="{{.ID}}">
+    </form>
+    <form id="delete-minecraft-{{.Index}}" method="post" action="" onsubmit="return confirm('Delete this Minecraft connector?')">
+        <input type="hidden" name="_action" value="delete">
+        <input type="hidden" name="index" value="{{.Index}}">
+    </form>
+{{end}}
+
+<script>
+document.querySelectorAll("[data-server-tabs]").forEach(function (tabs) {
+    var buttons = tabs.querySelectorAll("[data-tab-target]");
+    var panels = tabs.querySelectorAll(".server-tab-panel");
+
+    buttons.forEach(function (button) {
+        button.addEventListener("click", function () {
+            buttons.forEach(function (item) {
+                item.classList.remove("active");
+                item.setAttribute("aria-selected", "false");
+            });
+            panels.forEach(function (panel) {
+                panel.classList.remove("active");
+            });
+
+            button.classList.add("active");
+            button.setAttribute("aria-selected", "true");
+
+            var panel = tabs.querySelector("#" + button.dataset.tabTarget);
+            if (panel) {
+                panel.classList.add("active");
+            }
+        });
+    });
+});
+</script>
+{{end}}

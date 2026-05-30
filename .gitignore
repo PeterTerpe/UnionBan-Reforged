@@ -1,3 +1,15 @@
+<<<<<<< dev
+data/
+*.log
+.env
+config.yaml
+*keypair*.json
+*.key
+.vscode/
+MeshBan
+meshban-*
+=======
 .env
 data/
 config.yaml
+>>>>>>> main

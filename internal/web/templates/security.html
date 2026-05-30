@@ -1,0 +1,150 @@
+{{define "content"}}
+<div class="card">
+    <h2>Security Settings</h2>
+    <p><a href="/ui">Back to dashboard</a></p>
+
+    {{if .Message}}
+        <p class="result-ok">{{.Message}}</p>
+    {{end}}
+
+    {{if .ErrorMessage}}
+        <p class="result-error">{{.ErrorMessage}}</p>
+    {{end}}
+</div>
+
+<div class="card">
+    <h2>WebUI Access</h2>
+
+    <form method="post" action="">
+        <input type="hidden" name="_action" value="webui">
+        <label>WebUI Listen Address</label>
+        <input class="input" name="listen" value="{{.Config.WebUI.Listen}}">
+
+        <p class="warning-text">
+            Listen address changes require restart.
+        </p>
+
+        <button class="button" type="submit">Save WebUI Settings</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>WebUI Token</h2>
+
+    <p>Token configured: <strong>{{.HasWebToken}}</strong></p>
+
+    {{if .WebToken}}
+        <label>Current WebUI Token</label>
+
+        <div class="token-row">
+            <input id="web-token-field"
+                class="input token-input"
+                type="text"
+                readonly
+                value="••••••••••••••••"
+                data-token="{{.WebToken}}"
+                data-hidden-value="••••••••••••••••"
+                onclick="this.select()">
+
+            <button id="web-token-toggle"
+                    class="secondary-button"
+                    type="button"
+                    onclick="toggleWebTokenVisibility()">
+                Show
+            </button>
+        </div>
+
+        <p class="warning-text">
+            Click Show to view token.
+        </p>
+    {{else}}
+        <p class="result-error">No WebUI token is configured.</p>
+    {{end}}
+
+    <form method="post"
+          action=""
+          onsubmit="return confirm('Change the WebUI token? Existing remote sessions and old remote access links may stop working.')">
+        <input type="hidden" name="_action" value="token-update">
+        <label>Set New WebUI Token</label>
+        <input class="input token-input"
+               name="web_token"
+               placeholder="Enter a new WebUI token"
+               minlength="2"
+               maxlength="128"
+               autocomplete="new-password">
+
+        <button class="button" type="submit">Save WebUI Token</button>
+    </form>
+
+    <hr>
+
+    <form method="post"
+          action=""
+          onsubmit="return confirm('Regenerate the WebUI token? Existing remote sessions and old remote access links will stop working.')">
+        <input type="hidden" name="_action" value="token-regenerate">
+        <button class="danger-button" type="submit">Regenerate WebUI Token</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Private Key Encryption</h2>
+
+    <p>Encryption enabled in config: <strong>{{.Config.Security.EncryptPrivateKey}}</strong></p>
+    <p>Passphrase configured: <strong>{{.HasKeyPassphrase}}</strong></p>
+
+    <form method="post"
+          action=""
+          onsubmit="return confirm('Change the private key passphrase? The new passphrase will be stored in .env')">
+        <input type="hidden" name="_action" value="passphrase">
+        <label>New Passphrase</label>
+        <input class="input" name="new_passphrase" type="password" placeholder="New private key passphrase">
+
+        <button class="button" type="submit">Enable or Change Passphrase</button>
+    </form>
+
+    {{if .HasKeyPassphrase}}
+        <div class="danger-zone">
+            <h2>Danger Zone</h2>
+
+            <form method="post"
+                  action=""
+                  onsubmit="return confirm('Disable private key encryption? The private key will be stored in plaintext inside the SQLite database and the passphrase will be removed.')">
+                <input type="hidden" name="_action" value="disable-encryption">
+                <p class="warning-text">
+                    Disabling encryption stores the local private key in plaintext inside the SQLite database and removes the current key passphrase.
+                </p>
+
+                <button class="danger-button" type="submit">Disable Private Key Encryption</button>
+            </form>
+        </div>
+    {{else}}
+        <p class="warning-text">
+            No key passphrase is currently configured, so there is no passphrase removal action to show.
+        </p>
+    {{end}}
+</div>
+<script>
+function toggleWebTokenVisibility() {
+    const tokenField = document.getElementById("web-token-field");
+    const button = document.getElementById("web-token-toggle");
+
+    if (!tokenField || !button) {
+        return;
+    }
+
+    const hiddenValue = tokenField.dataset.hiddenValue || "••••••••••••••••";
+    const realToken = tokenField.dataset.token || "";
+
+    if (tokenField.dataset.visible === "true") {
+        tokenField.value = hiddenValue;
+        tokenField.dataset.visible = "false";
+        button.textContent = "Show";
+    } else {
+        tokenField.value = realToken;
+        tokenField.dataset.visible = "true";
+        button.textContent = "Hide";
+        tokenField.select();
+    }
+}
+</script>
+{{end}}

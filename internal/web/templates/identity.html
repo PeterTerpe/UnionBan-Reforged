@@ -1,0 +1,86 @@
+{{define "content"}}
+<div class="card">
+    <h2>Local Identity</h2>
+    <p><a href="/ui">Back to dashboard</a></p>
+
+    {{if .Message}}
+        <p class="result-ok">{{.Message}}</p>
+    {{end}}
+
+    {{if .ErrorMessage}}
+        <p class="result-error">{{.ErrorMessage}}</p>
+    {{end}}
+
+    {{if .LocalIdentity}}
+        <p><strong>Node ID:</strong></p>
+        <p><code>{{.LocalIdentity.NodeID}}</code></p>
+
+        <p><strong>Public Key:</strong></p>
+        <textarea readonly class="large-textarea">{{.LocalIdentity.PublicKey}}</textarea>
+
+        <p><strong>Certificate:</strong></p>
+        <textarea readonly class="large-textarea">{{.LocalIdentity.Certificate}}</textarea>
+
+        <p><strong>Created At:</strong> {{formatUnix .LocalIdentity.CreatedAt}}</p>
+        <p><strong>Updated At:</strong> {{formatUnix .LocalIdentity.UpdatedAt}}</p>
+    {{end}}
+</div>
+
+<div class="card">
+    <details class="advanced-section">
+        <summary>Advanced identity actions</summary>
+
+        <p class="warning-text">
+            These actions are for backup, migration, or recovery only. Normal users should not need to use them.
+        </p>
+
+        <div class="danger-zone">
+            <h2>Create New Key Pair</h2>
+
+            <p class="warning-text">
+                Creating a new key pair replaces the current local identity and changes this node's Node ID.
+                Existing local ban records signed by the old identity will not be automatically re-signed.
+            </p>
+
+            <form method="post"
+                  action=""
+                  onsubmit="return confirm('Create a new key pair? This will replace the current local identity and change this node\'s Node ID.')">
+                <input type="hidden" name="_action" value="new-keypair">
+                <button class="danger-button" type="submit">Create New Key Pair</button>
+            </form>
+        </div>
+
+        <div class="danger-zone">
+            <h2>Export Key Pair</h2>
+
+            <p class="warning-text">
+                The exported key pair contains sensitive identity material. Keep the downloaded file secret and never commit it to Git.
+            </p>
+
+            <form method="get"
+                  action="/ui/identity/export"
+                  onsubmit="return confirm('Export the key pair? Keep the downloaded file secret and never commit it to Git.')">
+                <button class="button" type="submit">Download Key Pair JSON</button>
+            </form>
+        </div>
+
+        <div class="danger-zone">
+            <h2>Import Key Pair</h2>
+
+            <p class="warning-text">
+                Importing a key pair replaces the current local identity. Use this only for migration or backup recovery.
+            </p>
+
+            <form method="post"
+                  action=""
+                  onsubmit="return confirm('Import this key pair? This will replace the current local identity.')">
+                <input type="hidden" name="_action" value="import">
+                <label>Key Pair JSON</label>
+                <textarea class="large-textarea" name="keypair_json" placeholder="Paste exported key pair JSON here"></textarea>
+
+                <button class="danger-button" type="submit">Import and Replace Identity</button>
+            </form>
+        </div>
+    </details>
+</div>
+{{end}}
