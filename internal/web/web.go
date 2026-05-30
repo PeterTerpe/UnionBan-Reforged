@@ -719,30 +719,10 @@ func intPtr(value int) *int {
 	return &value
 }
 
-func boolPtr(value bool) *bool {
-	return &value
-}
-
 func intPtrVal(value *int) int {
 	if value == nil {
 		return 0
 	}
-	return *value
-}
-
-func intPtrValue(value *int, fallback int) int {
-	if value == nil {
-		return fallback
-	}
-
-	return *value
-}
-
-func boolPtrValue(value *bool, fallback bool) bool {
-	if value == nil {
-		return fallback
-	}
-
 	return *value
 }
 
