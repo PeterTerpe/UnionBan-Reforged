@@ -6,3 +6,4 @@ config.yaml
 *.key
 .vscode/
 MeshBan
+meshban-*

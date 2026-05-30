@@ -216,6 +216,115 @@ type BanlistQueryResponse struct {
 	Timestamp  int64               `json:"timestamp"`
 }
 
+// NodeIdentityResponse mirrors the payload returned by GET /api/v1/identity.
+type NodeIdentityResponse struct {
+	NodeID      string `json:"node_id"`
+	DisplayName string `json:"display_name"`
+	Certificate string `json:"certificate"`
+	CreatedAt   int64  `json:"created_at"`
+}
+
+// FetchNodeIdentity connects to a remote MeshBan node at the given address,
+// retrieves its identity certificate, and cryptographically verifies it.
+// On success it returns a NodeRecord ready to be inserted into the database.
+//
+// The address may be a bare host, host:port, or full http:// URL.  When no
+// port is included, the default MeshBan API port (30000) is assumed.
+func (c *Client) FetchNodeIdentity(ctx context.Context, address string) (database.NodeRecord, error) {
+	baseURL := normalizeNodeAddress(address)
+
+	url := baseURL + "/api/v1/identity"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return database.NodeRecord{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return database.NodeRecord{}, fmt.Errorf("failed to connect to node at %s: %w", address, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return database.NodeRecord{}, fmt.Errorf("node at %s returned HTTP %d: %s", address, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var identityResp NodeIdentityResponse
+	if err := json.NewDecoder(resp.Body).Decode(&identityResp); err != nil {
+		return database.NodeRecord{}, fmt.Errorf("failed to decode identity response from %s: %w", address, err)
+	}
+
+	if identityResp.Certificate == "" {
+		return database.NodeRecord{}, fmt.Errorf("node at %s returned an empty certificate", address)
+	}
+
+	// Verify the certificate cryptographically (self-signature and NodeID).
+	cert, _, err := identity.VerifyCertificateFromJSON(identityResp.Certificate)
+	if err != nil {
+		return database.NodeRecord{}, fmt.Errorf("certificate verification failed for node at %s: %w", address, err)
+	}
+
+	// Extract the host portion from the address for storage.
+	host := extractHost(address)
+
+	c.logger.Info("fetched and verified remote node identity",
+		"node_id", cert.NodeID,
+		"display_name", cert.DisplayName,
+		"address", host,
+	)
+
+	return database.NodeRecord{
+		NodeID:      cert.NodeID,
+		Certificate: identityResp.Certificate,
+		PublicKey:   cert.PublicKey,
+		Address:     host,
+		TrustLevel:  database.TrustUnknown,
+	}, nil
+}
+
+func normalizeNodeAddress(address string) string {
+	address = strings.TrimSpace(address)
+
+	hasScheme := strings.HasPrefix(address, "http://") || strings.HasPrefix(address, "https://")
+
+	var scheme, hostPort string
+	if hasScheme {
+		if idx := strings.Index(address, "://"); idx != -1 {
+			scheme = address[:idx+3]
+			hostPort = address[idx+3:]
+		}
+	} else {
+		scheme = "http://"
+		hostPort = address
+	}
+
+	// Check if a port is already included.
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil || port == "" {
+		// No port – use the default.
+		if host == "" {
+			host = hostPort
+		}
+		return scheme + net.JoinHostPort(host, "30000")
+	}
+
+	return scheme + net.JoinHostPort(host, port)
+}
+
+// extractHost returns the host (and port if non-default) from a user-supplied address.
+func extractHost(address string) string {
+	address = strings.TrimSpace(address)
+
+	// Strip scheme.
+	if idx := strings.Index(address, "://"); idx != -1 {
+		address = address[idx+3:]
+	}
+
+	return address
+}
+
 func collectNonNil(results []QueryResult) []QueryResult {
 	var out []QueryResult
 	for _, r := range results {

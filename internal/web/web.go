@@ -21,6 +21,7 @@ import (
 	"github.com/PeterTerpe/MeshBan/internal/identity"
 	"github.com/PeterTerpe/MeshBan/internal/logs"
 	"github.com/PeterTerpe/MeshBan/internal/minecraft"
+	nodesclient "github.com/PeterTerpe/MeshBan/internal/nodes"
 	"github.com/PeterTerpe/MeshBan/internal/secrets"
 )
 
@@ -44,6 +45,7 @@ type Options struct {
 	Logger          *slog.Logger
 	LogBuffer       *logs.Buffer
 	Minecraft       *minecraft.Service
+	NodeClient      *nodesclient.Client
 }
 
 type Handler struct {
@@ -56,6 +58,7 @@ type Handler struct {
 	logger          *slog.Logger
 	logBuffer       *logs.Buffer
 	minecraft       *minecraft.Service
+	nodeClient       *nodesclient.Client
 	loginLimiter    *auth.LoginLimiter
 	templateCache   map[string]*template.Template
 }
@@ -131,6 +134,7 @@ type PageData struct {
 	BanSearchName                    string
 	BanSearchSource                  string
 	BanSearchReason                  string
+	NodeRecords                      []database.NodeRecord
 	Message                          string
 	ErrorMessage                     string
 	LocalIdentity                    *identity.Identity
@@ -159,6 +163,7 @@ func RegisterRoutes(mux *http.ServeMux, options Options) {
 		logger:          options.Logger,
 		logBuffer:       options.LogBuffer,
 		minecraft:       options.Minecraft,
+		nodeClient:       options.NodeClient,
 		loginLimiter:    auth.NewLoginLimiter(5, 10*time.Minute, 15*time.Minute),
 		templateCache:   make(map[string]*template.Template),
 	}
@@ -869,6 +874,12 @@ func (h *Handler) handleDatabasePage(w http.ResponseWriter, r *http.Request) {
 		h.databaseDoClearCache(w, r)
 	case "verify_signature":
 		h.databaseDoVerifySignature(w, r)
+	case "node_create":
+		h.databaseDoNodeCreate(w, r)
+	case "node_update":
+		h.databaseDoNodeUpdate(w, r)
+	case "node_delete":
+		h.databaseDoNodeDelete(w, r)
 	default:
 		h.flashDatabase(w, r, "", "unknown action")
 	}
@@ -1002,9 +1013,97 @@ func (h *Handler) databaseDoVerifySignature(w http.ResponseWriter, r *http.Reque
 	h.flashDatabase(w, r, "signature is valid - signed by local node "+h.identityService.Current().NodeID, "")
 }
 
+func (h *Handler) databaseDoNodeCreate(w http.ResponseWriter, r *http.Request) {
+	address := strings.TrimSpace(r.FormValue("node_address"))
+	if address == "" {
+		h.flashDatabase(w, r, "", "node address is required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	node, err := h.nodeClient.FetchNodeIdentity(ctx, address)
+	if err != nil {
+		h.flashDatabase(w, r, "", "failed to fetch node identity: "+err.Error())
+		return
+	}
+
+	if err := h.database.UpsertNode(ctx, node); err != nil {
+		h.flashDatabase(w, r, "", err.Error())
+		return
+	}
+
+	h.flashDatabase(w, r, "node added: "+node.NodeID, "")
+}
+
+func (h *Handler) databaseDoNodeUpdate(w http.ResponseWriter, r *http.Request) {
+	node, err := parseNodeRecordForm(r)
+	if err != nil {
+		h.flashDatabase(w, r, "", err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	if err := h.database.UpsertNode(ctx, node); err != nil {
+		h.flashDatabase(w, r, "", err.Error())
+		return
+	}
+
+	h.flashDatabase(w, r, "node updated", "")
+}
+
+func (h *Handler) databaseDoNodeDelete(w http.ResponseWriter, r *http.Request) {
+	nodeID := strings.TrimSpace(r.FormValue("node_id"))
+	if nodeID == "" {
+		h.flashDatabase(w, r, "", "node id is required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	if err := h.database.DeleteNode(ctx, nodeID); err != nil {
+		h.flashDatabase(w, r, "", err.Error())
+		return
+	}
+
+	h.flashDatabase(w, r, "node deleted", "")
+}
+
+func parseNodeRecordForm(r *http.Request) (database.NodeRecord, error) {
+	if err := r.ParseForm(); err != nil {
+		return database.NodeRecord{}, err
+	}
+
+	trustLevel := strings.TrimSpace(strings.ToLower(r.FormValue("trust_level")))
+	if trustLevel == "" {
+		trustLevel = database.TrustUnknown
+	}
+
+	return database.NodeRecord{
+		NodeID:      strings.TrimSpace(r.FormValue("node_id")),
+		Certificate: strings.TrimSpace(r.FormValue("certificate")),
+		PublicKey:   strings.TrimSpace(r.FormValue("public_key")),
+		Address:     strings.TrimSpace(r.FormValue("address")),
+		IP:          strings.TrimSpace(r.FormValue("ip")),
+		TrustLevel:  trustLevel,
+	}, nil
+}
+
 func (h *Handler) renderDatabasePage(w http.ResponseWriter, r *http.Request, data PageData) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
+
+	// Load node list for the Nodes tab.
+	nodes, nodeErr := h.database.ListNodes(ctx)
+	if nodeErr != nil {
+		data.ErrorMessage = nodeErr.Error()
+	} else {
+		data.NodeRecords = nodes
+	}
 
 	// Parse pagination and filter query parameters.
 	query := r.URL.Query()

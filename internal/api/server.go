@@ -16,6 +16,7 @@ import (
 	"github.com/PeterTerpe/MeshBan/internal/identity"
 	"github.com/PeterTerpe/MeshBan/internal/logs"
 	"github.com/PeterTerpe/MeshBan/internal/minecraft"
+	nodesclient "github.com/PeterTerpe/MeshBan/internal/nodes"
 	"github.com/PeterTerpe/MeshBan/internal/secrets"
 	"github.com/PeterTerpe/MeshBan/internal/web"
 )
@@ -87,6 +88,7 @@ func NewServer(options Options) *Server {
 		Logger:          options.Logger,
 		LogBuffer:       options.LogBuffer,
 		Minecraft:       options.Minecraft,
+		NodeClient:      nodesclient.NewClient(options.Logger),
 	})
 
 	return s

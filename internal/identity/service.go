@@ -313,6 +313,48 @@ func NodeIDFromPublicKey(publicKey []byte) string {
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:nodeIDHashBytes]))
 }
 
+// VerifyCertificateFromJSON parses a JSON-encoded certificate, verifies its
+// self-signature, and checks that the claimed NodeID matches the public key.
+// It returns the parsed certificate and the raw public key bytes on success.
+func VerifyCertificateFromJSON(rawJSON string) (*Certificate, []byte, error) {
+	var cert Certificate
+	if err := json.Unmarshal([]byte(rawJSON), &cert); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	if cert.Type != certificateType {
+		return nil, nil, fmt.Errorf("unknown certificate type: %s", cert.Type)
+	}
+
+	pubKeyBytes, err := decodeBase64(cert.PublicKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decode certificate public key: %w", err)
+	}
+
+	if len(pubKeyBytes) != ed25519.PublicKeySize {
+		return nil, nil, fmt.Errorf("certificate public key has unexpected size %d", len(pubKeyBytes))
+	}
+
+	// Verify that the NodeID was computed honestly from the public key.
+	expectedNodeID := NodeIDFromPublicKey(pubKeyBytes)
+	if !strings.EqualFold(cert.NodeID, expectedNodeID) {
+		return nil, nil, fmt.Errorf("node_id %s does not match public key (expected %s)", cert.NodeID, expectedNodeID)
+	}
+
+	// Verify the self-signature.
+	sigBytes, err := decodeBase64(cert.Signature)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decode certificate signature: %w", err)
+	}
+
+	payload := buildCertificatePayload(cert)
+	if !ed25519.Verify(ed25519.PublicKey(pubKeyBytes), []byte(payload), sigBytes) {
+		return nil, nil, fmt.Errorf("certificate signature verification failed")
+	}
+
+	return &cert, pubKeyBytes, nil
+}
+
 func identityFromRecord(record *database.IdentityRecord) *Identity {
 	return &Identity{
 		NodeID:      record.NodeID,

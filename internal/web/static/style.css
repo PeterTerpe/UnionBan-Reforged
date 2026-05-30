@@ -507,6 +507,32 @@ hr {
     color: #991b1b;
 }
 
+/* Trust level pills */
+.trust-ultimate {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.trust-trusted {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.trust-friend {
+    background: #ccfbf1;
+    color: #0f766e;
+}
+
+.trust-unknown {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.trust-untrusted {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
 .tab-button .status-ok {
     background: #16a34a;
 }
