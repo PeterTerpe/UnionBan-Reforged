@@ -1,104 +1,133 @@
-# Code Structure & Purpose
-This document briefly explain the code structure and each file's purpose. 
-Notes may be recorded in [notes.md](./notes.md) before making it to this document.
-## main.go
-The main programme that handles other components.
+[English](./code_en.md)
+# 代码结构与用途
 
-- Initialise configuration and database
-- Create the WebUI server
-- Start enabled Minecraft monitors
+本文档简要说明代码结构以及每个文件的用途。
+在正式加入本文档之前，相关备注可以先记录在 [notes.md](./notes.md) 中。
+
+## main.go
+
+主程序，用于处理其他组件。
+
+* 初始化配置和数据库
+* 创建 WebUI 服务器
+* 启动已启用的 Minecraft 监控器
 
 ## api
-The WebUI and API server, manage request authentication
 
-*PS: moving the auth logic to auth could be a good idea*
+WebUI 和 API 服务器，负责管理请求认证。
+
+*PS：将认证逻辑移动到 auth 中可能是个不错的想法*
 
 ## auth
-Authentication helper of [api](#api)
 
-- Handle WebUI connection authentication (token/session cokkie based)
-- Prevent basic brute force attack of WebUI token
+[api](#api) 的认证辅助模块。
+
+* 处理 WebUI 连接认证（基于 token/session cookie）
+* 防止针对 WebUI token 的基础暴力破解攻击
 
 ## config
-Initialise/Load configuration files
 
-- Create config.yaml from example_config.yaml if not present.
+初始化/加载配置文件。
+
+* 如果 `config.yaml` 不存在，则根据 `example_config.yaml` 创建它。
 
 ## database
-Handle data stored in the database
+
+处理存储在数据库中的数据。
 
 ### banlist.go
-Handle the banlist table
 
-- Validate entries before writing to database
-  - require: player UUID, ban reason, source node ID
+处理 banlist 表。
+
+* 在写入数据库前验证条目
+
+  * 必需字段：玩家 UUID、封禁原因、来源节点 ID
 
 ### cache.go
-Handle player decision cache entries used by Minecraft join checks.
 
-- Cache allow/kick decisions per Minecraft instance and player UUID
-- Invalidate cached decisions when the local banlist version changes
+处理 Minecraft 加入检查所使用的玩家决策缓存条目。
+
+* 按 Minecraft 实例和玩家 UUID 缓存放行/踢出决策
+* 当本地 banlist 版本发生变化时，使已缓存的决策失效
 
 ### identity.go
-Handle node identities using [identity/service.go](#servicego)
 
-- Local
-- Others (not implemented yet)
+使用 [identity/service.go](#servicego) 处理节点身份。
+
+* 本地身份
+* 其他身份（尚未实现）
 
 ## debug/peer
-A debug tool to test peer connections during development, not fully implemented yet.
+
+用于在开发过程中测试 peer 连接的调试工具，目前尚未完全实现。
 
 ## minecraft
-Monitor Minecraft servers through log tailing and RCON.
 
-- Tail the configured server log and check players when join events appear
-- Poll RCON `banlist players` and import resolvable server bans into the local banlist
-- Resolve player UUIDs from log UUID lines, RCON entity data, or the optional UUID resolver
-- Check cached allow/kick decisions before evaluating local banlist entries
-- Kick players who satisfy the configured policy
+通过日志跟踪和 RCON 监控 Minecraft 服务器。
+
+* 跟踪已配置的服务器日志，并在出现玩家加入事件时检查玩家
+* 通过 RCON 轮询 `banlist players`，并将可解析的服务器封禁导入本地 banlist
+* 从日志中的 UUID 行、RCON 实体数据或可选的 UUID 解析器中解析玩家 UUID
+* 在评估本地 banlist 条目前，先检查已缓存的放行/踢出决策
+* 踢出满足已配置策略的玩家
 
 ## identity
-Directly handle key pair
+
+直接处理密钥对。
 
 ### private_key.go
-Handle private key encryption and decryption, versioning. A helper for [service.go](#servicego)
+
+处理私钥加密、解密和版本管理。它是 [service.go](#servicego) 的辅助模块。
 
 ### service.go
-Manage local identity, signing, and private key
 
-- Initialise local identity from database
-- Initialise passphrase of the private key in .env file
-- Key pair import/export
-  - Validation of imported json
-- Fetch/Re information about other nodes
+管理本地身份、签名和私钥。
+
+* 从数据库初始化本地身份
+* 初始化 `.env` 文件中的私钥密码
+* 密钥对导入/导出
+
+  * 验证导入的 JSON
+* 获取/重新获取其他节点的信息
 
 ## secrets
-Generate new passphrase/token and save them to .env
+
+生成新的密码/token，并将它们保存到 `.env`。
 
 ## web
-The part where users interact with, but all traffic goes through ```adminAccessMiddleware()``` in [api](#api) for authentication first.
 
-It allow users to:
-- Login
-- Manage local identity:
-  - import/export/regenerate key pairs
-- Manage WebUI security options:
-  - Binding address
-  - Copy/set/regenerate token
-  - Toggle token verification of remote clients
-- Manage key security options:
-  - Remove/set private key passphrase
-- Manage local Banlist entries:
-  - Add/edit
-- Debug options
-- View logs
-- Manage Minecraft server log/RCON connections and status
-- Manage peer connections: (to be implemented)
-  - Manage peer list
-  - Manage trust level
-  - Deny request from blacklisted IPs
+用户交互的部分，但所有流量都会先经过 [api](#api) 中的 `adminAccessMiddleware()` 进行认证。
+
+它允许用户：
+
+* 登录
+* 管理本地身份：
+
+  * 导入/导出/重新生成密钥对
+* 管理 WebUI 安全选项：
+
+  * 绑定地址
+  * 复制/设置/重新生成 token
+  * 切换远程客户端的 token 验证
+* 管理密钥安全选项：
+
+  * 移除/设置私钥密码
+* 管理本地 Banlist 条目：
+
+  * 添加/编辑
+* 调试选项
+* 查看日志
+* 管理 Minecraft 服务器日志/RCON 连接和状态
+* 管理 peer 连接：（待实现）
+
+  * 管理 peer 列表
+  * 管理信任等级
+  * 拒绝来自黑名单 IP 的请求
+
 ### static & templates
-css and html files used to construct the frontend WebUI
+
+用于构建前端 WebUI 的 CSS 和 HTML 文件。
 
 ### web.go
-Construct WebUI frontend
+
+构建 WebUI 前端。

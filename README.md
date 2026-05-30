@@ -1,3 +1,4 @@
+[English](./README_en.md)
 # MeshBan
 
 基于P2P的Minecraft封禁玩家名单共享。完全不依靠中心服务器，借助DHT网络和证书签名，使节点间自行建立连接并设定信任等级和封禁规则。

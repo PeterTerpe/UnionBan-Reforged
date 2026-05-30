@@ -1,3 +1,4 @@
+[English](./introduction_en.md)
 # 开发文档
 此文档主要描述软件功能设计，关于代码构建和技术细节请见[Code Structure & Purpose](./code.md)
 ## 待考虑的问题
