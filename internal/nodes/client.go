@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -134,6 +135,27 @@ func (c *Client) queryNode(ctx context.Context, playerUUID string, node database
 		return result
 	}
 
+	// Compute the node ID locally from the public key to verify that the
+	// stored node_id matches.  If it doesn't, use the locally-computed
+	// value so trust-level classification is always based on the
+	// cryptographically-verified identity.
+	pubKeyBytes, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(node.PublicKey))
+	if err != nil {
+		c.logger.Warn("cannot decode public key",
+			"remote_node", node.NodeID,
+			"error", err,
+		)
+		result.Error = fmt.Errorf("cannot decode public key: %w", err)
+		return result
+	}
+	localNodeID := identity.NodeIDFromPublicKey(pubKeyBytes)
+	if localNodeID != node.NodeID {
+		c.logger.Warn("stored node_id does not match public key, using locally computed node_id",
+			"stored_node_id", node.NodeID,
+			"computed_node_id", localNodeID,
+		)
+	}
+
 	// Validate each entry's signature against the node's public key.
 	var validEntries []database.BanEntry
 	for _, entry := range queryResp.Entries {
@@ -146,16 +168,17 @@ func (c *Client) queryNode(ctx context.Context, playerUUID string, node database
 			entry.UpdatedAt,
 		); err != nil {
 			c.logger.Warn("discarding ban entry from remote node with invalid signature",
-				"remote_node", node.NodeID,
+				"remote_node", localNodeID,
 				"player_uuid", entry.PlayerUUID,
 				"entry_id", entry.ID,
 				"error", err,
 			)
 			continue
 		}
-		// Overwrite SourceNodeID to the remote node's ID so local trust-level
-		// classification works correctly.
-		entry.SourceNodeID = node.NodeID
+		// Overwrite SourceNodeID to the locally-computed node ID so local
+		// trust-level classification works correctly and is always based on
+		// the verified public key.
+		entry.SourceNodeID = localNodeID
 		validEntries = append(validEntries, entry)
 	}
 

@@ -21,6 +21,7 @@ import (
 const (
 	certificateType   = "meshban.node_certificate.v1"
 	keyPairExportType = "meshban.key_pair_export.v1"
+	nodeIDHashBytes   = 16
 )
 
 type Service struct {
@@ -309,7 +310,7 @@ func createCertificate(identity *Identity, displayName string, keyOptions KeyOpt
 
 func NodeIDFromPublicKey(publicKey []byte) string {
 	sum := sha256.Sum256(publicKey)
-	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:16]))
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:nodeIDHashBytes]))
 }
 
 func identityFromRecord(record *database.IdentityRecord) *Identity {

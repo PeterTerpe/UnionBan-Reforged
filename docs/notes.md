@@ -5,6 +5,7 @@ This document records notes as a reminder for future development
 - no format check when importing banned-player.json
 - check if banlist is updated by checking banlist_version table in database, and increase everytime banlist is updated
 - signature verification of new banlist entries is done in `internal/nodes/client.go:queryNode()`
+- also verify node ID for fetched Banlist entries, if ID does not match public key, recompute node id locally
 
 ## Temporary notes
 Should be useless after commit
