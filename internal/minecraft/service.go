@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -717,8 +718,13 @@ func (s *Service) setRCONError(instanceID string, value string) {
 	}
 }
 
-// CheckHealth performs a one-time RCON connectivity check and updates the
-// connector status.  It is meant to be called manually (e.g. from the WebUI).
+// CheckHealth performs a one-time connectivity and file accessibility check
+// and updates the connector status.  It is meant to be called manually
+// (e.g. from the WebUI).  It verifies:
+//
+//   - RCON connectivity (if the instance is configured for RCON)
+//   - Minecraft log file is present and readable
+//   - banned-players.json is present and readable (when path is set)
 func (s *Service) CheckHealth(ctx context.Context, id string) error {
 	var instance config.MinecraftInstanceConfig
 	found := false
@@ -733,6 +739,11 @@ func (s *Service) CheckHealth(ctx context.Context, id string) error {
 		return errors.New("instance not found")
 	}
 
+	now := time.Now().Unix()
+	var failures []string
+	var lastErr error
+
+	// --- RCON connectivity ---
 	password := ""
 	if s.secretManager != nil {
 		password = strings.TrimSpace(s.secretManager.Get(instance.RCON.PasswordEnv))
@@ -740,24 +751,54 @@ func (s *Service) CheckHealth(ctx context.Context, id string) error {
 
 	address := net.JoinHostPort(instance.RCON.Host, fmt.Sprintf("%d", instance.RCON.Port))
 	client := NewRCONClient(address, password, 5*time.Second)
-	defer client.Close()
-
-	now := time.Now().Unix()
 
 	if _, err := client.Command(ctx, "list"); err != nil {
-		msg := "RCON connection failed: " + err.Error()
+		msg := "RCON: " + err.Error()
+		failures = append(failures, msg)
+		lastErr = err
 		s.setRCONError(id, msg)
+	} else {
+		s.setRCONError(id, "")
+	}
+	client.Close()
+
+	// --- Log file accessibility ---
+	logPath := strings.TrimSpace(instance.Log.Path)
+	if logPath == "" {
+		failures = append(failures, "log: path is not configured")
+	} else if _, err := os.Stat(logPath); err != nil {
+		msg := "log: " + err.Error()
+		failures = append(failures, msg)
+		if lastErr == nil {
+			lastErr = err
+		}
+	}
+
+	// --- banned-players.json accessibility ---
+	banPath := strings.TrimSpace(instance.BannedPlayersPath)
+	if banPath != "" {
+		if _, err := os.Stat(banPath); err != nil {
+			msg := "banned-players: " + err.Error()
+			failures = append(failures, msg)
+			if lastErr == nil {
+				lastErr = err
+			}
+		}
+	}
+
+	// --- Update status ---
+	if len(failures) > 0 {
+		msg := "health check: " + strings.Join(failures, "; ")
 		s.updateStatus(id, func(status *ConnectorStatus) {
 			status.State = "error"
 			status.Message = msg
 			status.LastPollUnix = now
 			status.LastErrorUnix = now
-			status.LastError = err.Error()
+			status.LastError = strings.Join(failures, "; ")
 		})
-		return err
+		return fmt.Errorf("health check failed for %s: %s", id, strings.Join(failures, "; "))
 	}
 
-	s.setRCONError(id, "")
 	s.updateStatus(id, func(status *ConnectorStatus) {
 		status.State = "ok"
 		status.Message = "health check passed"
